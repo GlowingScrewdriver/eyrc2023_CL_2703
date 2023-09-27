@@ -198,6 +198,10 @@ class aruco_tf(Node):
         Returns:
         '''
 
+        self.cv_image = self.bridge.imgmsg_to_cv2(data, desired_encoding='passthrough')
+        #cv2.imshow ("Depth CB", self.cv_image)
+        #cv2.waitKey (2)
+
         ############ ADD YOUR CODE HERE ############
 
         # INSTRUCTIONS & HELP : 
@@ -219,6 +223,10 @@ class aruco_tf(Node):
 
         Returns:
         '''
+
+        self.cv_image = self.bridge.imgmsg_to_cv2(data, desired_encoding='passthrough')
+        #cv2.imshow ("Color CB", self.cv_image)
+        #cv2.waitKey (2)
 
         ############ ADD YOUR CODE HERE ############
 
