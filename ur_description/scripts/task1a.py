@@ -61,9 +61,20 @@ def calculate_rectangle_area(coordinates):
     ############ Function VARIABLES ############
 
     # You can remove these variables after reading the instructions. These are just for sample.
-
-    area = None
-    width = None
+    x1_y1=coordinates[0]
+    x2_y2=coordinates[1]
+    x3_y3=coordinates[2]
+    x4_y4=coordinates[3]
+    
+    triangle1=np.array([[x1_y1[0],x1_y1[1],1],[x2_y2[0],x2_y2[1],1],[x3_y3[0],x3_y3[1],1]])
+    tri_1_Area=(1/2)*(np.linalg.det(triangle1))
+    
+    triangle2=np.array([[x1_y1[0],x1_y1[1],1],[x3_y3[0],x3_y3[1],1],[x4_y4[0],x4_y4[1],1]])
+    tri_2_Area=(1/2)*(np.linalg.det(triangle2))
+    
+    	
+    area = tri_1_Area+tri_2_Area
+    width = False
 
     ############ ADD YOUR CODE HERE ############
 
