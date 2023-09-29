@@ -121,6 +121,7 @@ def detect_aruco(image):
     width_aruco_list = []
     ids = []
  
+
     ############ ADD YOUR CODE HERE ############
 
     # INSTRUCTIONS & HELP : 
@@ -146,6 +147,16 @@ def detect_aruco(image):
     #       ->  HINT: You may use 'cv2.drawFrameAxes'
 
     ############################################
+
+
+    gray_img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    dicty = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+    corners, ids, rejectedCandidates = cv2.aruco.detectMarkers (gray_img, dicty)
+
+    cv2.aruco.drawDetectedMarkers (image, corners, ids)
+    cv2.imshow ('Aruco Detector', image)
+    cv2.waitKey (3)
+
 
     return center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids
 
@@ -198,8 +209,8 @@ class aruco_tf(Node):
         Returns:
         '''
 
-        self.cv_image = self.bridge.imgmsg_to_cv2(data, desired_encoding='passthrough')
-        #cv2.imshow ("Depth CB", self.cv_image)
+        self.depth_image = self.bridge.imgmsg_to_cv2(data, desired_encoding='passthrough')
+        #cv2.imshow ("Depth CB", self.depth_image)
         #cv2.waitKey (2)
 
         ############ ADD YOUR CODE HERE ############
@@ -229,7 +240,7 @@ class aruco_tf(Node):
         #cv2.waitKey (2)
 
         ############ ADD YOUR CODE HERE ############
-
+#
         # INSTRUCTIONS & HELP : 
 
         #	->  Use data variable to convert ROS Image message to CV2 Image type
@@ -312,6 +323,8 @@ class aruco_tf(Node):
         #               Also, auto eval script will be judging angular difference aswell. So, make sure that Z axis is inside the box (Refer sample images on Portal - MD book)
 
         ############################################
+
+        detect_aruco (self.cv_image)
 
 
 ##################### FUNCTION DEFINITION #######################
