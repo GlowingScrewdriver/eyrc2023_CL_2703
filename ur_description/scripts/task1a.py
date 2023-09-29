@@ -88,6 +88,23 @@ def calculate_rectangle_area(coordinates):
 
     return area, width
 
+def calculate_center (corners):
+
+    # Construct linear eqns. for the diagonals and solve
+    m0_2 = (corners[0][1] - corners[2][1])/(corners[0][0] - corners[2][0]) # Slope of diagonal 0-2
+    m1_3 = (corners[1][1] - corners[3][1])/(corners[1][0] - corners[3][0]) # Slope of diagonal 1-3
+
+    coeffs = np.array ([
+        [m0_2, -1],
+        [m1_3, -1],
+    ])
+    consts = np.array ([
+        m0_2*corners[0][0] - corners[0][1],
+        m1_3*corners[1][0] - corners[1][1],
+    ])
+
+    center = np.linalg.solve(coeffs, consts)
+    return (int(center[0]), int(center[1]))
 
 def detect_aruco(image):
     '''
@@ -165,11 +182,31 @@ def detect_aruco(image):
     corners, ids, rejectedCandidates = cv2.aruco.detectMarkers (gray_img, dicty)
 
     cv2.aruco.drawDetectedMarkers (image, corners, ids)
+
+    # Filter out small markers
+    ids_fil = []; corners_fil = []
+    for n in range (len(ids)):
+        area = calculate_rectangle_area(corners[n][0])[0]
+        if area > aruco_area_threshold:
+            ids_fil.append (ids[n])
+            corners_fil.append (corners[n])
+
+    # Calculate centers
+    for n in range (len(ids_fil)):
+        c = calculate_center (corners_fil[n][0])
+        center_aruco_list.append(c)
+        cv2.circle (image, c, 4, (255, 0, 0), 2)
+
+    # Pose estimation
+    distance_from_rgb_list, angle_aruco_list, objpts = cv2.aruco.estimatePoseSingleMarkers (corners_fil, size_of_aruco_m, cam_mat, dist_mat)
+
+    for n in range (len(distance_from_rgb_list)):
+        cv2.drawFrameAxes(image, cam_mat, dist_mat, distance_from_rgb_list[n], angle_aruco_list[n], 5)
+
     cv2.imshow ('Aruco Detector', image)
     cv2.waitKey (3)
 
-
-    return center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids
+    return center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids_fil
 
 
 ##################### CLASS DEFINITION #######################
@@ -283,7 +320,7 @@ class aruco_tf(Node):
         centerCamY = 360
         focalX = 931.1829833984375
         focalY = 931.1829833984375
-            
+
 
         ############ ADD YOUR CODE HERE ############
 
@@ -335,7 +372,8 @@ class aruco_tf(Node):
 
         ############################################
 
-        detect_aruco (self.cv_image)
+        center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids = detect_aruco (self.cv_image)
+
 
 
 ##################### FUNCTION DEFINITION #######################
