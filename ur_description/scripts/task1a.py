@@ -181,6 +181,8 @@ def detect_aruco(image):
     dicty = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
     corners, ids, rejectedCandidates = cv2.aruco.detectMarkers (gray_img, dicty)
 
+    if (ids is None): return center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, []
+
     cv2.aruco.drawDetectedMarkers (image, corners, ids)
 
     # Filter out small markers
@@ -201,7 +203,7 @@ def detect_aruco(image):
     distance_from_rgb_list, angle_aruco_list, objpts = cv2.aruco.estimatePoseSingleMarkers (corners_fil, size_of_aruco_m, cam_mat, dist_mat)
 
     for n in range (len(distance_from_rgb_list)):
-        cv2.drawFrameAxes(image, cam_mat, dist_mat, distance_from_rgb_list[n], angle_aruco_list[n], 5)
+        cv2.drawFrameAxes(image, cam_mat, dist_mat, distance_from_rgb_list[n], angle_aruco_list[n], 0.5)
 
     cv2.imshow ('Aruco Detector', image)
     cv2.waitKey (3)
@@ -240,6 +242,7 @@ class aruco_tf(Node):
         self.tf_buffer = tf2_ros.buffer.Buffer()                                        # buffer time used for listening transforms
         self.listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self.br = tf2_ros.TransformBroadcaster(self)                                    # object as transform broadcaster to send transform wrt some frame_id
+
         self.timer = self.create_timer(image_processing_rate, self.process_image)       # creating a timer based function which gets called on every 0.2 seconds (as defined by 'image_processing_rate' variable)
         
         self.cv_image = None                                                            # colour raw image variable (from colorimagecb())
@@ -372,8 +375,13 @@ class aruco_tf(Node):
 
         ############################################
 
-        center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids = detect_aruco (self.cv_image)
+        if (self.cv_image is None): return
+        if (self.depth_image is None): return
 
+        center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids = detect_aruco (self.cv_image)
+        for n in range(len(angle_aruco_list)):
+            an = angle_aruco_list[n]
+            angle_aruco_list[n] = (0.788*an) - ((an**2)/3160)
 
 
 ##################### FUNCTION DEFINITION #######################
