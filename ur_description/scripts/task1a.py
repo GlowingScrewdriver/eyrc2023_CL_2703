@@ -183,8 +183,6 @@ def detect_aruco(image):
 
     if (ids is None): return center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, []
 
-    cv2.aruco.drawDetectedMarkers (image, corners, ids)
-
     # Filter out small markers
     ids_fil = []; corners_fil = []
     for n in range (len(ids)):
@@ -197,13 +195,16 @@ def detect_aruco(image):
     for n in range (len(ids_fil)):
         c = calculate_center (corners_fil[n][0])
         center_aruco_list.append(c)
-        cv2.circle (image, c, 4, (255, 0, 0), 2)
 
     # Pose estimation
     distance_from_rgb_list, angle_aruco_list, objpts = cv2.aruco.estimatePoseSingleMarkers (corners_fil, size_of_aruco_m, cam_mat, dist_mat)
 
-    for n in range (len(distance_from_rgb_list)):
+
+    # Report some useful results on the OpenCV output image
+    cv2.aruco.drawDetectedMarkers (image, corners, ids)
+    for n in range (len(ids_fil)):
         cv2.drawFrameAxes(image, cam_mat, dist_mat, distance_from_rgb_list[n], angle_aruco_list[n], 0.5)
+        cv2.circle (image, center_aruco_list[n], 4, (0, 255, 255), 2)
 
     cv2.imshow ('Aruco Detector', image)
     cv2.waitKey (3)
@@ -379,9 +380,13 @@ class aruco_tf(Node):
         if (self.depth_image is None): return
 
         center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids = detect_aruco (self.cv_image)
+        aruco_quat_list = [] # List of quaternions for each aruco
+
         for n in range(len(angle_aruco_list)):
             an = angle_aruco_list[n]
-            angle_aruco_list[n] = (0.788*an) - ((an**2)/3160)
+            #angle_aruco_list[n] = (0.788*an) - ((an**2)/3160)
+            rot = R.from_rotvec (an)
+            aruco_quat_list += [rot.as_quat()]
 
 
 ##################### FUNCTION DEFINITION #######################
