@@ -29,6 +29,8 @@
 #                   Subscribing Topics - [ /camera/aligned_depth_to_color/image_raw, /etc... ]
 
 
+
+
 ################### IMPORT MODULES #######################
 
 import rclpy
@@ -197,14 +199,15 @@ def detect_aruco(image):
         center_aruco_list.append(c)
 
     # Pose estimation
-    distance_from_rgb_list, angle_aruco_list, objpts = cv2.aruco.estimatePoseSingleMarkers (corners_fil, size_of_aruco_m, cam_mat, dist_mat)
+    angle_aruco_list, distance_from_rgb_list, objpts = cv2.aruco.estimatePoseSingleMarkers (corners_fil, size_of_aruco_m, cam_mat, dist_mat)
 
 
     # Report some useful results on the OpenCV output image
     cv2.aruco.drawDetectedMarkers (image, corners, ids)
     for n in range (len(ids_fil)):
-        cv2.drawFrameAxes(image, cam_mat, dist_mat, distance_from_rgb_list[n], angle_aruco_list[n], 0.5)
-        cv2.circle (image, center_aruco_list[n], 4, (0, 255, 255), 2)
+        cv2.drawFrameAxes(image, cam_mat, dist_mat, angle_aruco_list[n], distance_from_rgb_list[n], 0.5)
+        cv2.circle (image, center_aruco_list[n], 4, (255, 0, 255), 2)
+        cv2.putText (image, "center", (center_aruco_list[n][0] - 10, center_aruco_list[n][1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
     cv2.imshow ('Aruco Detector', image)
     cv2.waitKey (3)
@@ -382,11 +385,44 @@ class aruco_tf(Node):
         center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids = detect_aruco (self.cv_image)
         aruco_quat_list = [] # List of quaternions for each aruco
 
-        for n in range(len(angle_aruco_list)):
-            an = angle_aruco_list[n]
-            #angle_aruco_list[n] = (0.788*an) - ((an**2)/3160)
-            rot = R.from_rotvec (an)
-            aruco_quat_list += [rot.as_quat()]
+        for an in angle_aruco_list:
+            yaw = R.from_rotvec(an[0]).as_euler('xyz')[2] # We are only interested in the yaw for each marker
+            quat = R.from_euler ('zyz', [math.pi/2, math.pi/2, -yaw]).as_quat()
+            aruco_quat_list += [quat]
+
+        for n in range(len(ids)):
+            _id = ids[n][0]
+
+            t = TransformStamped()
+            t.header.frame_id = 'camera_link'
+            t.child_frame_id = f'cam_{_id}'
+
+            t.transform.translation.x = distance_from_rgb_list[n][0][2]
+            t.transform.translation.y = -distance_from_rgb_list[n][0][0]
+            t.transform.translation.z = -distance_from_rgb_list[n][0][1]
+
+            # Transform from marker to camera
+            self.br.sendTransform(t)
+
+
+            try:
+                # Transform from marker to base
+                base_obj_tf = self.tf_buffer.lookup_transform (
+                    'base_link', f'cam_{_id}',
+                    rclpy.time.Time()
+                )
+                base_obj_tf.child_frame_id = f'obj_{_id}'
+
+                # Set rotation, using only yaw from pose estimation
+                base_obj_tf.transform.rotation.x = aruco_quat_list[n][0]
+                base_obj_tf.transform.rotation.y = aruco_quat_list[n][1]
+                base_obj_tf.transform.rotation.z = aruco_quat_list[n][2]
+                base_obj_tf.transform.rotation.w = aruco_quat_list[n][3]
+
+                self.br.sendTransform(base_obj_tf)
+
+            except tf2_ros.LookupException as e:
+                pass
 
 
 ##################### FUNCTION DEFINITION #######################
