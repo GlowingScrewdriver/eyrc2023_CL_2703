@@ -21,6 +21,8 @@ endif()
 
 install(PROGRAMS
   scripts/task1a.py
+  scripts/task1b.py
+  scripts/task1c.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
