@@ -2,6 +2,8 @@
 
 from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
+from rclpy.node import Node
+import tf2_ros
 import rclpy
 import time, math
 
@@ -24,15 +26,9 @@ def navigate (init_pose, fin_pose):
     now = navigator.get_clock().now().to_msg()
     init_pose_msg, fin_pose_msg = gen_pose_msg (init_pose, now), gen_pose_msg (fin_pose, now)
     path = navigator.getPath (init_pose_msg, fin_pose_msg)
-    #print (path)
 
     print (f'moving from {init_pose} to {fin_pose}')
     navigator.followPath (path)
-
-    #goal = gen_pose_msg (fin_pose)
-
-    #navigator.goToPose (goal)
-    #waitCount = 0
     while not navigator.isTaskComplete ():
         print ('Nav not complete, waiting')
         time.sleep (2)
@@ -49,17 +45,17 @@ if __name__ == '__main__':
     init_pose = { 'trans': [0.0,  0.0],  'rot':  0.0 }
     pose_list = [
         # Each element here is one of the required poses for Task 1C
-        #{ 'trans': [0.0,  0.0],  'rot':  0.0 },
+        { 'trans': [0.0,  0.0],  'rot':  0.0 },
         { 'trans': [ 1.8,  1.5],  'rot':  1.57 },
-        #{ 'trans': [ 2.0, -7.0],  'rot': -1.57 },
-        #{ 'trans': [-3.0,  2.5],  'rot':  1.57 },
+        { 'trans': [ 2.0, -7.0],  'rot': -1.57 },
+        { 'trans': [-3.0,  2.5],  'rot':  1.57 },
     ]
+
     for pose in pose_list:
         navigate (init_pose, pose)
-        #navigator.setInitialPose (init_pose)
-        #path = navigator.getPath (init_pose, pose)
-        #print (path)
         init_pose = pose
 
+
+    print (tf)
     print ('bye')
     rclpy.shutdown ()
