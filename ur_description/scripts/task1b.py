@@ -24,49 +24,20 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
-def pose_goal (shoulder):
-    # We should probably look at making this a member of `class Move`
-    # Currently this is written to work as if it has its own process, etc.
-    # as opposed to using the same resources as `Move`
-    # But, it works. Nothing really _broken_ for now
-
-    # Create node for this example
-    node = Node("ex_pose_goal")
-
-    callback_group = ReentrantCallbackGroup()
-    # Create MoveIt 2 interface
-    moveit2 = MoveIt2(
-        node=node,
-        joint_names=ur5.joint_names(),
-        base_link_name=ur5.base_link_name(),
-        end_effector_name=ur5.end_effector_name(),
-        group_name=ur5.MOVE_GROUP_ARM,
-        callback_group=callback_group,
-    )
-
-    executor = rclpy.executors.MultiThreadedExecutor(2)
-    executor.add_node(node)
-    executor_thread = Thread(target=executor.spin, daemon=True, args=())
-    executor_thread.start()
-
-    # Move to pose
-    print (f"Moving to shoulder {shoulder}")
-    moveit2.move_to_configuration(
-        [shoulder, -2.1, 2.1, -3.15, -1.58, 3.15]
-    )
-    moveit2.wait_until_executed()
-    executor.shutdown()
 
 class Move(Node):
-    def motion(self):
+    class MotionEndedException (Exception):
+        pass
 
+    def motion(self):
         # What to do if the previous target has been reached
         if not self.dest:
             if not self.dest_list:
                 print ('Done!')
-                exit (0)
+                raise self.MotionEndedException ('Motion ended')
+                return
             self.dest = self.dest_list.pop(0)
-            pose_goal (self.destinations[self.dest]['shoulder'])
+            self.pose_goal (self.destinations[self.dest]['shoulder'])
             print (f'Moving to position {self.dest}')
 
         # What follows is the servo logic, carried out after calling pose_goal() for each target
@@ -92,8 +63,9 @@ class Move(Node):
 
         if (dist < 0.01): # Endpoint for a servo motion (i.e. a target is reached)
             print ('Reached destination')
-            if self.destinations[self.dest]['retract']: # We do not need to retract after reaching the drop position
-                pose_goal (self.destinations[self.dest]['shoulder'])
+            if self.destinations[self.dest]['retract']: # We may not need to retract after reaching some positions
+                time.sleep (0.5) # Else the planner complains saying the arm pose does not match the expected value
+                self.pose_goal (self.destinations[self.dest]['shoulder'])
             self.dest = None
         dest_vel = (dest_pos / dist) * 0.4 # Servo motion at 0.4 metres/second
 
@@ -107,8 +79,14 @@ class Move(Node):
 
         self.__twist_pub.publish (self.__twist_msg)
 
+    def pose_goal (self, shoulder):
+        print (f"Moving to shoulder {shoulder}")
+        self.moveit2.move_to_configuration(
+            [shoulder, -2.1, 2.1, -3.15, -1.58, 3.15]
+        )
+        self.moveit2.wait_until_executed()
 
-    def __init__(self, name, executor):
+    def __init__(self, name):
         super().__init__(name)
 
         self.tf_buffer = tf2_ros.buffer.Buffer()
@@ -116,6 +94,17 @@ class Move(Node):
         self.__twist_msg = TwistStamped ()
         self.__twist_pub = self.create_publisher(TwistStamped, "/servo_node/delta_twist_cmds", 10)
 
+
+        # Create MoveIt 2 interface
+        callback_group = ReentrantCallbackGroup()
+        self.moveit2 = MoveIt2(
+            node=self,
+            joint_names=ur5.joint_names(),
+            base_link_name=ur5.base_link_name(),
+            end_effector_name=ur5.end_effector_name(),
+            group_name=ur5.MOVE_GROUP_ARM,
+            callback_group=callback_group,
+        )
 
         self.destinations = {
             # Each of these targets is reached by:
@@ -135,7 +124,7 @@ class Move(Node):
              'd': {
                 'position': np.array([-0.37, 0.12, 0.397] ),
                 'shoulder': -math.pi,
-                'retract': False,
+                'retract': True,
              },
              'p2': {
                 'position': np.array([0.194, -0.43, 0.701]),
@@ -161,16 +150,13 @@ class Move(Node):
 def main():
     rclpy.init()
 
-
-    # Use a single-threaded executor to avoid issues with transform lookups
-    executor = rclpy.executors.SingleThreadedExecutor()
+    executor = rclpy.executors.MultiThreadedExecutor(3)
     # Create node for this example
-    node = Move("ex_servo", executor)
+    node = Move("ex_servo")
     executor.add_node(node)
     executor.spin()
 
     rclpy.shutdown()
-    exit(0)
 
 
 if __name__ == "__main__":
