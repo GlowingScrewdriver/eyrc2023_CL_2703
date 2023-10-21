@@ -24,7 +24,6 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
-
 class Move(Node):
     class MotionEndedException (Exception):
         pass
@@ -32,12 +31,12 @@ class Move(Node):
     def motion(self):
         # What to do if the previous target has been reached
         if not self.dest:
-            if not self.dest_list:
+            if not self.destinations:
                 print ('Done!')
                 raise self.MotionEndedException ('Motion ended')
                 return
-            self.dest = self.dest_list.pop(0)
-            self.pose_goal (self.destinations[self.dest]['shoulder'])
+            self.dest = self.destinations.pop(0)
+            self.pose_goal (self.dest['shoulder'])
             print (f'Moving to position {self.dest}')
 
         # What follows is the servo logic, carried out after calling pose_goal() for each target
@@ -57,16 +56,17 @@ class Move(Node):
             base_eef_tf.transform.translation.z,
         ])
 
-        dest_pos = self.destinations[self.dest]['position'] - eef_pos 
+        dest_pos = self.dest['position'] - eef_pos
         dist = sum(dest_pos**2)**0.5
-
 
         if (dist < 0.01): # Endpoint for a servo motion (i.e. a target is reached)
             print ('Reached destination')
-            if self.destinations[self.dest]['retract']: # We may not need to retract after reaching some positions
+            self.dest['callback'] ()
+            if self.dest['retract']: # We may not need to retract after reaching some positions
                 time.sleep (0.5) # Else the planner complains saying the arm pose does not match the expected value
-                self.pose_goal (self.destinations[self.dest]['shoulder'])
+                self.pose_goal (self.dest['shoulder'])
             self.dest = None
+            return
         dest_vel = (dest_pos / dist) * 0.4 # Servo motion at 0.4 metres/second
 
         self.__twist_msg.header.stamp = now.to_msg()
@@ -106,7 +106,7 @@ class Move(Node):
             callback_group=callback_group,
         )
 
-        self.destinations = {
+        self.destinations = [
             # Each of these targets is reached by:
             # * setting the joint states to put the arm in a somewhat crouched position
             # * rotating the shoulder to make the arm EEF face the general direction of the target
@@ -116,24 +116,25 @@ class Move(Node):
 
             # Each of the pick positions (P1 and P2) and the drop position (D) is a target here
 
-             'p1': {
+             {
                 'position': np.array([0.35, 0.1, 0.68]),
                 'shoulder': 0.0,
                 'retract': True,
+                'callback': dest_callback,
              },
-             'd': {
+             {
                 'position': np.array([-0.37, 0.12, 0.397] ),
                 'shoulder': -math.pi,
                 'retract': True,
+                'callback': dest_callback,
              },
-             'p2': {
+             {
                 'position': np.array([0.194, -0.43, 0.701]),
                 'shoulder': -math.pi/2,
                 'retract': True,
+                'callback': dest_callback,
              },
-        }
-        self.declare_parameter ('targets', ['p1', 'd', 'p2', 'd']) # Task 1B requirements
-        self.dest_list = self.get_parameter("targets").get_parameter_value().string_array_value
+        ]
         self.dest = None
 
         self.create_timer (0.02, self.motion)
@@ -146,6 +147,8 @@ class Move(Node):
         # 5. `dest` is set to `None` (this triggers the motion to the next target, refer first few lines of function `motion`
         # 6. Repeat from 1.
 
+def dest_callback ():
+    print ('This is the default callback on reaching the destination')
 
 def main():
     rclpy.init()
