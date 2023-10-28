@@ -1,7 +1,4 @@
-bool linear_dock
-bool orientation_dock
-float64 distance  
-float64 orientation
+float64 orientation # Rack's orientation (and thus expected final orientation of the robot)
 string rack_no
 ---
 bool success   # indicate successful run of triggered service
