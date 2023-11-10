@@ -1,25 +1,42 @@
 #!/usr/bin/python3
 
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 from rclpy.node import Node
 import tf2_ros
 import rclpy
 import time
+from scipy.spatial.transform import Rotation as R
 
 class Navigator (BasicNavigator):
     def __init__ (self):
         BasicNavigator.__init__(self)
         self.robot_pose = None
-        self.create_subscription (Odometry, '/odom', self.odom_cb, 10)
+        self.cb_group = rclpy.callback_groups.ReentrantCallbackGroup ()
+        self.create_subscription (Odometry, '/odom', self.odom_cb, 10, callback_group=self.cb_group)
+        self.vel_pub = self.create_publisher (Twist, '/cmd_vel', 10)
 
     def odom_cb (self, msg):
         self.robot_pose = PoseStamped (pose=msg.pose.pose, header=msg.header)
         self.robot_pose.header.frame_id = 'map'
 
-    def amcl_cb (self, msg):
-        self.robot_pose = PoseStamped (pose=msg.pose.pose, header=msg.header)
+    def spin (self, rate):
+        vel = Twist ()
+        vel.angular.z = rate
+        self.vel_pub.publish (vel)
+
+    def adjust (self, goal_angle):
+        cur_angle = R.from_quat ([0.0, 0.0, self.robot_pose.pose.orientation.z, self.robot_pose.pose.orientation.w]).as_euler ('xyz')[2]
+        rot = 0.3
+        if goal_angle - cur_angle < 0: rot *= -1
+        self.spin (rot)
+        while (goal_angle - cur_angle)**2 > 0.2**2:
+            print (f'at angle {cur_angle}')
+            self.get_clock().sleep_for (rclpy.time.Duration(seconds = 0.1))
+            cur_angle = R.from_quat ([0.0, 0.0, self.robot_pose.pose.orientation.z, self.robot_pose.pose.orientation.w]).as_euler ('xyz')[2]
+        print ('aligned')
+        spin (0.0)
 
     def navigate (self, fin_pose):
         while not self.robot_pose:
@@ -61,7 +78,7 @@ if __name__ == '__main__':
 
     pose_list = [
         # Each element here is one of the required poses for Task 1C
-        #{ 'trans': [0.0,  0.0],  'rot':  1.55 },
+        { 'trans': [0.0,  0.0],  'rot':  1.55 },
         #{ 'trans': [ 1.8,  1.5],  'rot':  -1.57 },
         #{ 'trans': [ 2.0, -7.0],  'rot': -1.57 },
         #{ 'trans': [-3.0,  2.5],  'rot':  1.57 },

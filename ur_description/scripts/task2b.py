@@ -1,12 +1,110 @@
 #!/usr/bin/python3
 from task1c import Navigator
-from geometry_msgs.msg import Pose, PoseStamped
+from geometry_msgs.msg import Pose, PoseStamped, Twist
+from nav_msgs.msg import Odometry
 from linkattacher_msgs.srv import AttachLink, DetachLink
 from ebot_docking.srv import DockSw
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
-from math import sin, cos
-import time, threading
+from rclpy.node import Node
+from math import sin, cos, asin, acos, pi
+import time, threading, numpy as np
+from scipy.spatial.transform import Rotation as R
+
+def pretty_print_pose (pose):
+    print (f'Position: {pose.pose.position.x}, {pose.pose.position.y}, {pose.pose.position.z}')
+    print (f'Orientation: {pose.pose.orientation.z}, {pose.pose.orientation.w}')
+
+class RackShift (Node):
+    def __init__(self):
+        Node.__init__(self, 'rackshift')
+
+        self.callback_group = ReentrantCallbackGroup ()
+        # Docking on and picking up a rack
+        self.dock_cli   = self.create_client (DockSw, '/dock_control', callback_group=self.callback_group)
+        self.dock_req   = DockSw.Request ()
+        self.attach_cli = self.create_client (AttachLink, '/ATTACH_LINK', callback_group=self.callback_group)
+        self.attach_req = AttachLink.Request (model1_name='ebot', link1_name='ebot_base_link', link2_name='link')
+        self.detach_cli = self.create_client (DetachLink, '/DETACH_LINK', callback_group=self.callback_group)
+        self.detach_req = DetachLink.Request (model1_name='ebot', link1_name='ebot_base_link', link2_name='link')
+        # Velocity commands and odometry
+        self.vel_pub    = self.create_publisher (Twist, '/cmd_vel', 10)
+        self.robot_pose = None
+        self.create_subscription (Odometry, '/odom', self.odom_cb, 10, callback_group=self.callback_group)
+
+    def odom_cb (self, msg):
+        self.robot_pose = PoseStamped (pose=msg.pose.pose, header=msg.header)
+        self.robot_pose.header.frame_id = 'map'
+
+    def spin (self, rot=0.0, trans=0.0):
+        vel = Twist ()
+        vel.angular.z = rot
+        vel.linear.x = -trans # Robot moves _backwards_ at positive pace
+        self.vel_pub.publish (vel)
+
+
+    def adjust_pose (self, drop_pose):
+        loop_interval = 0.1
+        while not self.robot_pose:
+            time.sleep (0.2)
+
+        spin_dir = 0
+        Aligned = False
+        Reached = False
+        Done = False
+        # The following loop exits when the robot passes the desired angle
+        while True:
+            pos_diff = np.array ([ drop_pose['trans'][0] - self.robot_pose.pose.position.x,
+                drop_pose['trans'][1] - self.robot_pose.pose.position.y ])
+            cur_angle = R.from_quat ([0.0, 0.0, self.robot_pose.pose.orientation.z, self.robot_pose.pose.orientation.w]).as_euler ('xyz')[2]
+
+            # Alignment with goal
+            if not Aligned:
+                goal_angle = acos ( pos_diff[0] / (sum(pos_diff**2)**0.5) )
+                # Angle corrections
+                if pos_diff[1] < 0: goal_angle *= -1             # Choose between solutions for acos
+                goal_angle += pi                                 # Robot faces the opposite direction
+
+                angle_diff = goal_angle - cur_angle
+                while abs(angle_diff) > pi: angle_diff -= 2*pi   # Normalize to -pi <= angle <= +pi            
+
+                # To keep track and detect when angle difference changes sign
+                if angle_diff < 0: spin_dir_n = -1
+                else: spin_dir_n = 1
+                if spin_dir + spin_dir_n == 0: # We have just passed required angle
+                    # The robot has just passed the required angle
+                    # So, spinning for one interval in the opposite direction by {overshot/interval rad/s} should get us pretty close to the final position
+                    self.spin (angle_diff / loop_interval)
+                    self.get_clock().sleep_for (rclpy.time.Duration(seconds = loop_interval))
+                    spin_dir_n = 0
+                    Aligned = True
+
+                spin_dir = spin_dir_n
+                self.spin (rot = 0.7 * spin_dir)
+
+            # Driving to the goal
+            elif not Reached:
+                if sum(pos_diff**2) > 0.1**2:
+                    self.spin (trans = 0.5)
+                else:
+                    self.spin ()
+                    Reached = True
+
+            # Alignment as per goal spec
+            elif not Done:
+                goal_angle = drop_pose['rot']
+                rot = 0.7
+                angle_diff = goal_angle - cur_angle
+                if abs(angle_diff) < 0.05:
+                    rot = 0.0
+                    Done = True
+                if angle_diff < 0: rot *= -1
+                self.spin (rot = rot)
+
+            else:
+                return
+
+            self.get_clock().sleep_for (rclpy.time.Duration(seconds = loop_interval))
 
 if __name__ == "__main__":
     rclpy.init ()
@@ -14,86 +112,72 @@ if __name__ == "__main__":
     navigator = Navigator ()
     navigator.waitUntilNav2Active ()
 
-    docker = rclpy.create_node ('docking_client')
+    docker = RackShift ()
     executor = rclpy.executors.MultiThreadedExecutor (2)
     executor.add_node (docker)
     docker_th = threading.Thread (target=executor.spin)
     docker_th.start ()
 
-    callback_group = ReentrantCallbackGroup ()
-    # Clients and corresponding request objects
-    if False:
-        dock_cli, dock_req, attach_cli, attach_req, detach_cli, detach_req = [None]*6
-        for c in ([dock_cli, DockSw, '/dock_control', dock_req], [attach_cli, AttachLink, '/ATTACH_LINK', attach_req], [detach_cli, DetachLink, '/DETACH_LINK', detach_req]):
-            # Believe me, it's more painful to read when expanded XD
-            c[0] = node.create_client (c[1], c[2], callback_group=callback_group)
-            c[3] = c[1].Request ()
-
-    if True:
-        dock_cli   = docker.create_client (DockSw, '/dock_control', callback_group=callback_group)
-        dock_req   = DockSw.Request ()
-        attach_cli = docker.create_client (AttachLink, '/ATTACH_LINK', callback_group=callback_group)
-        attach_req = AttachLink.Request (model1_name='ebot', link1_name='ebot_base_link', link2_name='link')
-        detach_cli = docker.create_client (DetachLink, '/DETACH_LINK', callback_group=callback_group)
-        detach_req = DetachLink.Request (model1_name='ebot', link1_name='ebot_base_link', link2_name='link')
-
-    pose_list = [
+    rack_pose_info = {
         # Rack pickup and drop poses
-        {   # Rack 1
             'pickup': {'trans': [1.26, 4.35], 'rot': 3.14},
             'drop': {'trans': [0.5, -2.455], 'rot': 3.14},
             'rack': 'rack1',
-        },
-        {   # Rack 2
-            'pickup': {'trans': [2.03, 3.30], 'rot': -1.57},
-            'drop': {'trans': [0.8, -1.9], 'rot': -1.57},
-            'rack': 'rack2',
-        },
-        {   # Rack 3
-            'pickup': {'trans': [2.03, -8.09], 'rot': 1.57},
-            'drop': {'trans': [0.8, -3.1], 'rot': 1.57},
-            'rack': 'rack3',
-        },
-        # Note: These are NOT the expected robot poses; these are the exact rack poses
-    ][0:1]
+    }
+    # Note: These are NOT the expected robot poses; these are the exact rack poses
 
     while not navigator.robot_pose:
         time.sleep (2)
     navigator.setInitialPose (navigator.robot_pose)
 
-    for pose in pose_list:
+    if True: # Just for testing
+        pose = rack_pose_info
         print (f'Starting at {navigator.get_clock().now()}')
 
         # Navigate to the rack
         pickup_pose = pose['pickup']
         # Request the robot to move half a metre away from the actual rack position
-        pickup_pose['trans'][0] += cos(pickup_pose['rot'])*0.7
-        pickup_pose['trans'][1] += sin(pickup_pose['rot'])*0.7
+#        pickup_pose['trans'][0] += cos(pickup_pose['rot'])*0.7
+#        pickup_pose['trans'][1] += sin(pickup_pose['rot'])*0.7
+        pickup_pose['trans'] = [
+            (pickup_pose['trans'][0] + cos(pickup_pose['rot'])*0.7),
+            (pickup_pose['trans'][1] + sin(pickup_pose['rot'])*0.7),
+        ]
         navigator.navigate (pickup_pose)
         print (f'Reached rack')
 
         # Dock and pick up the rack
-        dock_req.orientation = pickup_pose['rot']
-        dock_cli.call(dock_req)
-        print (f'Reached rack, position is {navigator.robot_pose}')
-        attach_req.model2_name = pose['rack']
-        print (attach_cli.call (attach_req))
+        docker.dock_req.orientation = pickup_pose['rot']
+        docker.dock_cli.call(docker.dock_req)
+        print (f'Reached rack')
+        pretty_print_pose(navigator.robot_pose)
+        docker.attach_req.model2_name = pose['rack']
+        print (docker.attach_cli.call (docker.attach_req))
         print (f'Attached rack')
 
         # Navigate, again, half a metre away from desired pose
-        drop_pose = pose['drop']
-        drop_pose['trans'][0] += cos(drop_pose['rot'])*0.5
-        drop_pose['trans'][1] += sin(drop_pose['rot'])*0.5
+        drop_pose = pose['drop'].copy ()
+#        drop_pose_pre = drop_pose
+#        drop_pose_pre['trans'][0] += cos(drop_pose_pre['rot'])*0.9
+#        drop_pose_pre['trans'][1] += sin(drop_pose_pre['rot'])*0.9
+        drop_pose['trans'] = [
+            (drop_pose['trans'][0] + cos(drop_pose['rot'])*0.7),
+            (drop_pose['trans'][1] + sin(drop_pose['rot'])*0.7),
+        ]
         navigator.navigate (drop_pose)
         print (f'Reached arm pose')
 
+        docker.adjust_pose (pose['drop'])
+
         # Detach the rack
-        detach_req.model2_name = pose['rack']
-        print (detach_cli.call (detach_req))
-        print (f'Detached rack, position is {navigator.robot_pose}')
+        docker.detach_req.model2_name = pose['rack']
+        print (docker.detach_cli.call (docker.detach_req))
+        print (f'Detached rack')
+        pretty_print_pose(navigator.robot_pose)
 
         # Back to home pose
-        #navigator.navigate ({'trans': [0.0, 0.0], 'rot': 0.0})
+        navigator.navigate ({'trans': [0.0, 0.0], 'rot': 0.0})
+        docker.adjust_pose ({'trans': [0.0, 0.0], 'rot': 0.0})
 
         print (f'Finishing at {navigator.get_clock().now()}')
 

@@ -132,7 +132,7 @@ controller_server:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.1
-      yaw_goal_tolerance: 0.1
+      yaw_goal_tolerance: 3.14
     # DWB parameters
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
@@ -171,7 +171,7 @@ controller_server:
       BaseObstacle.scale: 0.02
 
       PathAlign.scale: 32.0
-      PathAlign.forward_point_distance: 0.1
+      PathAlign.forward_point_distance: 0.4
 
       GoalAlign.scale: 24.0
       GoalAlign.forward_point_distance: 0.1
@@ -324,6 +324,10 @@ recoveries_server:
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4
     rotational_acc_lim: 3.2
+
+behaviour_server:
+  ros__parameters:
+    robot_base_frame: "base_footprint"
 
 robot_state_publisher:
   ros__parameters:
