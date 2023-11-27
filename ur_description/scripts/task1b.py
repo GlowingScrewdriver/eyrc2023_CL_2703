@@ -43,7 +43,7 @@ class Move(Node):
         now = self.get_clock().now()
         try:
             base_eef_tf = self.tf_buffer.lookup_transform (
-                'base_link', f'tool0',
+                'base_link', f'wrist_3_link',
                 rclpy.time.Time()
             )
         except (tf2_ros.LookupException, tf2_ros.ConnectivityException) as e:
@@ -59,12 +59,12 @@ class Move(Node):
         dest_pos = self.dest['position'] - eef_pos
         dist = sum(dest_pos**2)**0.5
 
-        if (dist < 0.01): # Endpoint for a servo motion (i.e. a target is reached)
+        if (dist < 0.1): # Endpoint for a servo motion (i.e. a target is reached)
             print ('Reached destination')
             self.dest['callback'] ()
             if self.dest['retract']: # We may not need to retract after reaching some positions
                 time.sleep (0.5) # Else the planner complains saying the arm pose does not match the expected value
-                self.pose_goal (self.dest['shoulder'])
+                self.pose_goal (self.dest['shoulder'], retract=True)
             self.dest = None
             return
         dest_vel = (dest_pos / dist) * 0.4 # Servo motion at 0.4 metres/second
@@ -79,10 +79,14 @@ class Move(Node):
 
         self.__twist_pub.publish (self.__twist_msg)
 
-    def pose_goal (self, shoulder):
+    def pose_goal (self, shoulder, retract=False):
         print (f"Moving to shoulder {shoulder}")
+        if not retract:
+            joint_poses = [shoulder, -2.269, 2.164, -3.023, -1.58, 3.15]
+        else:
+            joint_poses = [shoulder, -2.269, 2.164, -4.71,  -1.58, 3.15]
         self.moveit2.move_to_configuration(
-            [shoulder, -2.1, 2.1, -3.15, -1.58, 3.15]
+            joint_poses
         )
         self.moveit2.wait_until_executed()
 
