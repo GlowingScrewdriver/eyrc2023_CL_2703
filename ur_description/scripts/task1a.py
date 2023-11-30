@@ -224,7 +224,7 @@ class aruco_tf(Node):
     Description:    Class which servers purpose to define process for detecting aruco marker and publishing tf on pose estimated.
     '''
 
-    def __init__(self):
+    def __init__(self, base_tf_fmt='obj_{_id}', cam_tf_fmt='cam_{_id}'):
         '''
         Description:    Initialization of class aruco_tf
                         All classes have a function called __init__(), which is always executed when the class is being initiated.
@@ -237,7 +237,6 @@ class aruco_tf(Node):
         ############ Topic SUBSCRIPTIONS ############
 
         self.color_cam_sub = self.create_subscription(Image, '/camera/color/image_raw', self.colorimagecb, 10)
-        self.depth_cam_sub = self.create_subscription(Image, '/camera/aligned_depth_to_color/image_raw', self.depthimagecb, 10)
 
         ############ Constructor VARIABLES/OBJECTS ############
 
@@ -250,34 +249,9 @@ class aruco_tf(Node):
         self.timer = self.create_timer(image_processing_rate, self.process_image)       # creating a timer based function which gets called on every 0.2 seconds (as defined by 'image_processing_rate' variable)
         
         self.cv_image = None                                                            # colour raw image variable (from colorimagecb())
-        self.depth_image = None                                                         # depth image variable (from depthimagecb())
+        self.base_cam_tf = None
 
-
-    def depthimagecb(self, data):
-        '''
-        Description:    Callback function for aligned depth camera topic. 
-                        Use this function to receive image depth data and convert to CV2 image
-
-        Args:
-            data (Image):    Input depth image frame received from aligned depth camera topic
-
-        Returns:
-        '''
-
-        self.depth_image = self.bridge.imgmsg_to_cv2(data, desired_encoding='passthrough')
-        #cv2.imshow ("Depth CB", self.depth_image)
-        #cv2.waitKey (2)
-
-        ############ ADD YOUR CODE HERE ############
-
-        # INSTRUCTIONS & HELP : 
-
-        #	->  Use data variable to convert ROS Image message to CV2 Image type
-
-        #   ->  HINT: You may use CvBridge to do the same
-
-        ############################################
-
+        self.base_tf_fmt, self.cam_tf_fmt = base_tf_fmt, cam_tf_fmt
 
     def colorimagecb(self, data):
         '''
@@ -291,8 +265,6 @@ class aruco_tf(Node):
         '''
 
         self.cv_image = self.bridge.imgmsg_to_cv2(data, desired_encoding='passthrough')
-        #cv2.imshow ("Color CB", self.cv_image)
-        #cv2.waitKey (2)
 
         ############ ADD YOUR CODE HERE ############
 #
@@ -380,26 +352,53 @@ class aruco_tf(Node):
         ############################################
 
         if (self.cv_image is None): return
-        if (self.depth_image is None): return
 
         center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids = detect_aruco (self.cv_image)
         aruco_quat_list = [] # List of quaternions for each aruco
 
+        while not self.base_cam_tf:
+            try:
+                self.base_cam_tf = self.tf_buffer.lookup_transform (
+                        'camera_link', f'base_link',
+                        rclpy.time.Time()
+                )
+            except tf2_ros.LookupException as e:
+                #print (e)
+                pass
+
+        cam_rot = R.from_quat ((
+            self.base_cam_tf.transform.rotation.x,
+            self.base_cam_tf.transform.rotation.y,
+            self.base_cam_tf.transform.rotation.z,
+            self.base_cam_tf.transform.rotation.w,
+        ))
+
         for an in angle_aruco_list:
-            yaw = R.from_rotvec(an[0]).as_euler('xyz')[2] # We are only interested in the yaw for each marker
-            quat = R.from_euler ('zyz', [math.pi/2, math.pi/2, -yaw]).as_quat()
-            aruco_quat_list += [quat]
+            # We are only interested in the yaw for each marker, since it is easy to
+            # just use the yaw + an extra rotation that is common for all markers.
+            yaw = R.from_rotvec(an[0]).as_euler('xyz')[2]
+            marker_rot = cam_rot * R.from_euler ('zyz', [math.pi/2, math.pi/2, -yaw])
+            aruco_quat_list += [ marker_rot.as_quat() ]
+
+
 
         for n in range(len(ids)):
             _id = ids[n][0]
 
             t = TransformStamped()
             t.header.frame_id = 'camera_link'
-            t.child_frame_id = f'cam_{_id}'
+            t.child_frame_id = self.cam_tf_fmt.format (_id=_id)
 
+            # Position
+            # Coordinates obtained from OpenCV are in the marker's coordinate frame, which is not aligned with base_link
             t.transform.translation.x = distance_from_rgb_list[n][0][2]
             t.transform.translation.y = -distance_from_rgb_list[n][0][0]
             t.transform.translation.z = -distance_from_rgb_list[n][0][1]
+            # Rotation
+            t.transform.rotation.x = aruco_quat_list[n][0]
+            t.transform.rotation.y = aruco_quat_list[n][1]
+            t.transform.rotation.z = aruco_quat_list[n][2]
+            t.transform.rotation.w = aruco_quat_list[n][3]
 
             # Transform from marker to camera
             self.br.sendTransform(t)
@@ -408,20 +407,14 @@ class aruco_tf(Node):
             try:
                 # Transform from marker to base
                 base_obj_tf = self.tf_buffer.lookup_transform (
-                    'base_link', f'cam_{_id}',
+                    'base_link', self.cam_tf_fmt.format (_id=_id),
                     rclpy.time.Time()
                 )
-                base_obj_tf.child_frame_id = f'obj_{_id}'
-
-                # Set rotation, using only yaw from pose estimation
-                base_obj_tf.transform.rotation.x = aruco_quat_list[n][0]
-                base_obj_tf.transform.rotation.y = aruco_quat_list[n][1]
-                base_obj_tf.transform.rotation.z = aruco_quat_list[n][2]
-                base_obj_tf.transform.rotation.w = aruco_quat_list[n][3]
-
-                self.br.sendTransform(base_obj_tf)
+                base_obj_tf.child_frame_id = self.base_tf_fmt.format (_id=_id)
+                self.br.sendTransform (base_obj_tf)
 
             except tf2_ros.LookupException as e:
+                #print (e)
                 pass
 
 
