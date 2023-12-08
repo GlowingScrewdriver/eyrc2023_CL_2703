@@ -126,7 +126,7 @@ class RobotDockingController(Node):
     def dock_control_callback(self, request, response):
         #while not self.robot_pose:
         while not self.robot_yaw:
-            sleep (0.5)
+            self.get_clock().sleep_for (rclpy.time.Duration(seconds = 0.5))
             print ('waiting for odom pose')
         #diff = request.orientation - self.robot_pose[2]
         diff = request.orientation - self.robot_yaw
@@ -142,14 +142,14 @@ class RobotDockingController(Node):
             if diff > 0: rot=1
             else: rot=-1
             self.spin (rot * 0.7)
-            time.sleep (0.1)
+            self.get_clock().sleep_for (rclpy.time.Duration(seconds = 0.1))
             #diff = request.orientation - self.robot_pose[2]
             diff = request.orientation - self.robot_yaw
 
         self.docking = True
         while self.docking:
             print ('Docking...')
-            time.sleep (0.5)
+            self.get_clock().sleep_for (rclpy.time.Duration(seconds = 0.5))
 
         print ('Done docking')
         response.success = True

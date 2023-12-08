@@ -32,6 +32,9 @@ class RackShift (Node):
         self.robot_pose = None
         self.create_subscription (Odometry, '/odom', self.odom_cb, 10, callback_group=self.callback_group)
 
+        self.navigator = Navigator ()
+        self.navigator.waitUntilNav2Active ()
+
     def odom_cb (self, msg):
         self.robot_pose = PoseStamped (pose=msg.pose.pose, header=msg.header)
         self.robot_pose.header.frame_id = 'map'
@@ -106,11 +109,57 @@ class RackShift (Node):
 
             self.get_clock().sleep_for (rclpy.time.Duration(seconds = loop_interval))
 
+    def rack_shift (self, rack_pose_info):
+        while not self.navigator.robot_pose:
+            time.sleep (2)
+        self.navigator.setInitialPose (self.navigator.robot_pose)
+
+        pose = rack_pose_info
+        print (f'Starting at {self.navigator.get_clock().now()}')
+
+        # Navigate to a point a little away from the
+        pickup_pose = pose['pickup']
+        pickup_pose['trans'] = [
+            (pickup_pose['trans'][0] + cos(pickup_pose['rot'])*0.5),
+            (pickup_pose['trans'][1] + sin(pickup_pose['rot'])*0.5),
+        ]
+        self.navigator.navigate (pickup_pose)
+        print (f'Reached rack')
+
+        # Dock and pick up the rack
+        self.dock_req.orientation = pickup_pose['rot']
+        self.dock_cli.call(self.dock_req)
+        print (f'Reached rack')
+        pretty_print_pose(self.navigator.robot_pose)
+        self.attach_req.model2_name = pose['rack']
+        print (self.attach_cli.call (self.attach_req))
+        print (f'Attached rack')
+
+        # Navigate, again, half a metre away from desired pose
+        drop_pose = pose['drop'].copy ()
+        drop_pose['trans'] = [
+            (drop_pose['trans'][0] + cos(drop_pose['rot'])*0.5),
+            (drop_pose['trans'][1] + sin(drop_pose['rot'])*0.5),
+        ]
+        self.navigator.navigate (drop_pose)
+        print (f'Reached arm pose')
+
+        self.adjust_pose (pose['drop'])
+
+        # Detach the rack
+        self.detach_req.model2_name = pose['rack']
+        print (self.detach_cli.call (self.detach_req))
+        print (f'Detached rack')
+        pretty_print_pose(self.navigator.robot_pose)
+
+        # Back to home pose
+        #self.navigator.navigate ({'trans': [0.0, 0.0], 'rot': 0.0})
+        #self.adjust_pose ({'trans': [0.0, 0.0], 'rot': 0.0})
+
+        print (f'Finishing at {self.navigator.get_clock().now()}')
+
 if __name__ == "__main__":
     rclpy.init ()
-
-    navigator = Navigator ()
-    navigator.waitUntilNav2Active ()
 
     docker = RackShift ()
     executor = rclpy.executors.MultiThreadedExecutor (2)
@@ -126,59 +175,6 @@ if __name__ == "__main__":
     }
     # Note: These are NOT the expected robot poses; these are the exact rack poses
 
-    while not navigator.robot_pose:
-        time.sleep (2)
-    navigator.setInitialPose (navigator.robot_pose)
-
-    if True: # Just for testing
-        pose = rack_pose_info
-        print (f'Starting at {navigator.get_clock().now()}')
-
-        # Navigate to the rack
-        pickup_pose = pose['pickup']
-        # Request the robot to move half a metre away from the actual rack position
-#        pickup_pose['trans'][0] += cos(pickup_pose['rot'])*0.7
-#        pickup_pose['trans'][1] += sin(pickup_pose['rot'])*0.7
-        pickup_pose['trans'] = [
-            (pickup_pose['trans'][0] + cos(pickup_pose['rot'])*0.7),
-            (pickup_pose['trans'][1] + sin(pickup_pose['rot'])*0.7),
-        ]
-        navigator.navigate (pickup_pose)
-        print (f'Reached rack')
-
-        # Dock and pick up the rack
-        docker.dock_req.orientation = pickup_pose['rot']
-        docker.dock_cli.call(docker.dock_req)
-        print (f'Reached rack')
-        pretty_print_pose(navigator.robot_pose)
-        docker.attach_req.model2_name = pose['rack']
-        print (docker.attach_cli.call (docker.attach_req))
-        print (f'Attached rack')
-
-        # Navigate, again, half a metre away from desired pose
-        drop_pose = pose['drop'].copy ()
-#        drop_pose_pre = drop_pose
-#        drop_pose_pre['trans'][0] += cos(drop_pose_pre['rot'])*0.9
-#        drop_pose_pre['trans'][1] += sin(drop_pose_pre['rot'])*0.9
-        drop_pose['trans'] = [
-            (drop_pose['trans'][0] + cos(drop_pose['rot'])*0.7),
-            (drop_pose['trans'][1] + sin(drop_pose['rot'])*0.7),
-        ]
-        navigator.navigate (drop_pose)
-        print (f'Reached arm pose')
-
-        docker.adjust_pose (pose['drop'])
-
-        # Detach the rack
-        docker.detach_req.model2_name = pose['rack']
-        print (docker.detach_cli.call (docker.detach_req))
-        print (f'Detached rack')
-        pretty_print_pose(navigator.robot_pose)
-
-        # Back to home pose
-        navigator.navigate ({'trans': [0.0, 0.0], 'rot': 0.0})
-        docker.adjust_pose ({'trans': [0.0, 0.0], 'rot': 0.0})
-
-        print (f'Finishing at {navigator.get_clock().now()}')
+    docker.rack_shift (rack_pose_info)
 
     rclpy.shutdown ()
