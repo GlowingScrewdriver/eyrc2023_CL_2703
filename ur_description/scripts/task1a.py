@@ -29,8 +29,6 @@
 #                   Subscribing Topics - [ /camera/aligned_depth_to_color/image_raw, /etc... ]
 
 
-
-
 ################### IMPORT MODULES #######################
 
 import rclpy
@@ -108,6 +106,18 @@ def calculate_center (corners):
     center = np.linalg.solve(coeffs, consts)
     return (int(center[0]), int(center[1]))
 
+# Detector parameters
+detector, params = cv2.aruco.ArucoDetector(), cv2.aruco.DetectorParameters()
+
+params.adaptiveThreshConstant = 20
+params.adaptiveThreshWinSizeMin, params.adaptiveThreshWinSizeMax, adaptiveThreshWinSizeStep = 29, 29, 1
+params.minMarkerPerimeterRate = 0.1
+params.perspectiveRemovePixelPerCell = 3
+params.perspectiveRemoveIgnoredMarginPerCell = 0.13
+
+detector.setDetectorParameters (params)
+detector.setDictionary (cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50))
+
 def detect_aruco(image):
     '''
     Description:    Function to perform aruco detection and return each detail of aruco detected 
@@ -136,6 +146,7 @@ def detect_aruco(image):
     # You may get this from /camer_info topic when camera is spawned in gazebo.
     # Make sure you verify this matrix once if there are calibration issues.
     cam_mat = np.array([[931.1829833984375, 0.0, 640.0], [0.0, 931.1829833984375, 360.0], [0.0, 0.0, 1.0]])
+    # Take from /camera/color/camera_info.k if needed
 
     # The distortion matrix is currently set to 0. 
     # We will be using it during Stage 2 hardware as Intel Realsense Camera provides these camera info.
@@ -180,8 +191,7 @@ def detect_aruco(image):
 
 
     gray_img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    dicty = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-    corners, ids, rejectedCandidates = cv2.aruco.detectMarkers (gray_img, dicty)
+    corners, ids, rejectedCandidates = detector.detectMarkers (gray_img)
 
     if (ids is None): return center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, []
 
@@ -201,13 +211,18 @@ def detect_aruco(image):
     # Pose estimation
     angle_aruco_list, distance_from_rgb_list, objpts = cv2.aruco.estimatePoseSingleMarkers (corners_fil, size_of_aruco_m, cam_mat, dist_mat)
 
+    if no_tf: # Some extra debug info
+        th_img = cv2.adaptiveThreshold(gray_img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY,params.adaptiveThreshWinSizeMin,params.adaptiveThreshConstant)
+        cv2.aruco.drawDetectedMarkers (th_img, rejectedCandidates)
+        cv2.imshow ('Threshold', th_img)
 
-    # Report some useful results on the OpenCV output image
-    cv2.aruco.drawDetectedMarkers (image, corners, ids)
     for n in range (len(ids_fil)):
         cv2.drawFrameAxes(image, cam_mat, dist_mat, angle_aruco_list[n], distance_from_rgb_list[n], 0.5)
         cv2.circle (image, center_aruco_list[n], 4, (255, 0, 255), 2)
         cv2.putText (image, "center", (center_aruco_list[n][0] - 10, center_aruco_list[n][1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+    # Report some useful results on the OpenCV output image
+    cv2.aruco.drawDetectedMarkers (image, corners, ids)
 
     cv2.imshow ('Aruco Detector', image)
     cv2.waitKey (3)
@@ -247,7 +262,7 @@ class aruco_tf(Node):
         self.br = tf2_ros.TransformBroadcaster(self)                                    # object as transform broadcaster to send transform wrt some frame_id
 
         self.timer = self.create_timer(image_processing_rate, self.process_image)       # creating a timer based function which gets called on every 0.2 seconds (as defined by 'image_processing_rate' variable)
-        
+
         self.cv_image = None                                                            # colour raw image variable (from colorimagecb())
         self.base_cam_tf = None
 
@@ -354,6 +369,7 @@ class aruco_tf(Node):
         if (self.cv_image is None): return
 
         center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids = detect_aruco (self.cv_image)
+        if no_tf: return
         aruco_quat_list = [] # List of quaternions for each aruco
 
         while not self.base_cam_tf:
@@ -428,6 +444,12 @@ def main():
     rclpy.init(args=sys.argv)                                       # initialisation
 
     node = rclpy.create_node('aruco_tf_process')                    # creating ROS node
+
+    node.declare_parameter ("no_tf", False)
+    global no_tf
+    no_tf = node.get_parameter("no_tf").get_parameter_value().bool_value
+    if no_tf:
+        print ("Not publishing transforms")
 
     node.get_logger().info('Node created: Aruco tf process')        # logging information
 
