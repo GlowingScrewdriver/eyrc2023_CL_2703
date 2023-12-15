@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+
+# Team ID:          CL#2703
+# Theme:            Cosmo Logistic
+# Author List:		Vedanth Padmaraman, Vamshi Vishruth
+# Filename:		    task1b.py
+#
+# Functions:        motion(),pose_goal(shoulder,retract),__init__(name),dest_callback(),main()
+# Classes:          Move(Node) 
+# Globals:          no_tf, detector, params
+
 from math import cos, sin
 import math, time
 import numpy as np
@@ -20,6 +30,13 @@ from rclpy.qos import (
 
 class Move(Node):
     def motion(self):
+        """
+        Perform the servo motion logic for reaching the specified targets.
+        This moves the arm based on position info in self.destinations. That must
+        be populated before running this.
+
+        Refer self.destinations assignment (commented out) under __init__
+        """
         while True:
             # What to do if the previous target has been reached
             if not self.dest:
@@ -34,7 +51,8 @@ class Move(Node):
             now = self.get_clock().now()
             try:
                 base_eef_tf = self.tf_buffer.lookup_transform (
-                    'base_link', f'wrist_3_link',
+                    #'base_link', f'wrist_3_link',
+                    'base_link', f'ee_link',
                     rclpy.time.Time()
                 )
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException) as e:
@@ -50,15 +68,20 @@ class Move(Node):
             dest_pos = self.dest['position'] - eef_pos
             dist = sum(dest_pos**2)**0.5
 
-            if (dist < 0.1): # Endpoint for a servo motion (i.e. a target is reached)
+            if (dist < 0.02): # Endpoint for a servo motion (i.e. a target is reached)
+                dest_pos *= 0
                 print ('Reached destination')
                 self.dest['callback'] ()
                 if self.dest['retract']: # We may not need to retract after reaching some positions
-                    #time.sleep (0.5) # Else the planner complains saying the arm pose does not match the expected value
-                    dest_pos *= 0
                     self.pose_goal (self.dest['shoulder'], retract=True)
+#                    self.dest['position'] = [
+#                        self.dest['position'][0] - 0.3 * cos(self.dest['shoulder']),
+#                        self.dest['position'][1] - 0.3 * sin(self.dest['shoulder']),
+#                        self.dest['position'][2],
+#                    ]
+                    #self.dest['retract'] = False
+                #else:
                 self.dest = None
-                #continue
             dest_vel = (dest_pos / dist) * 0.4 # Servo motion at 0.4 metres/second
 
             self.__twist_msg.header.stamp = now.to_msg()
@@ -70,9 +93,16 @@ class Move(Node):
             self.__twist_msg.twist.angular.z = 0.0
 
             self.__twist_pub.publish (self.__twist_msg)
-            self.get_clock().sleep_for (rclpy.time.Duration(seconds = 0.2))
 
     def pose_goal (self, shoulder, retract=False):
+        """
+        Move the robot to the specified joint configuration.
+
+        Args:
+            shoulder (float): Desired position for the shoulder joint.
+            retract (bool): Whether to retract the arm after reaching the goal position.
+        """
+        
         print (f"Moving to shoulder {shoulder}")
         if not retract:
             joint_poses = [shoulder, -2.269, 2.164, -3.023, -1.58, 3.15]
@@ -84,6 +114,13 @@ class Move(Node):
         self.moveit2.wait_until_executed()
 
     def __init__(self, name):
+        """
+        Initialize the Move class.
+
+        Args:
+            name (str): Name of the ROS node.
+        """
+        
         super().__init__(name)
 
         self.tf_buffer = tf2_ros.buffer.Buffer()
@@ -149,9 +186,15 @@ class Move(Node):
         # 6. Repeat from 1.
 
 def dest_callback ():
+    """
+    Default callback function when reaching the destination.
+    """
     print ('This is the default callback on reaching the destination')
 
 def main():
+    """
+    Main function to initialize and run the ROS node.
+    """
     rclpy.init()
 
     executor = rclpy.executors.MultiThreadedExecutor(3)

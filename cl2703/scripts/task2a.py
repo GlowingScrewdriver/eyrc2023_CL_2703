@@ -1,5 +1,17 @@
 #!/usr/bin/python3
 
+# Team ID:          CL#2703
+# Theme:            Cosmo Logistic
+# Author List:		Vedanth Padmaraman, Vamshi Vishruth
+# Filename:		    task2a.py
+#
+# Functions:        __init__(),attach_box_with_gripper(),detach_box_from_gripper(),pick_and_drop(box_i),main()
+# Classes:          PIckAndDrop(Move)
+# Globals:          
+
+################### IMPORT MODULES #######################
+
+
 import rclpy
 from rclpy.task import Future
 from task1b import Move
@@ -17,6 +29,11 @@ from linkattacher_msgs.srv import AttachLink, DetachLink
 
 class PickAndDrop (Move):
     def __init__(self, name):
+        """
+        Initialize the PickAndDrop class, inheriting from Move.
+
+        Creates clients for the AttachLink and DetachLink services for gripper control.
+        """
         callback_group = ReentrantCallbackGroup ()
         Move.__init__(self, name)
         # Gripper control
@@ -25,6 +42,9 @@ class PickAndDrop (Move):
 
     # Attaching the box to the gripper
     def attach_box_with_gripper(self):
+        """
+        Attach the box to the gripper using the AttachLink service.
+        """
         req = AttachLink.Request()
         req.model1_name=f'box{self.box_ids[0]}'
         req.link1_name='link'
@@ -42,6 +62,9 @@ class PickAndDrop (Move):
 
     # Detaching the box from the gripper
     def detach_box_from_gripper(self):
+        """
+        Detach the box from the gripper using the DetachLink service.
+        """
         req = DetachLink.Request()
         req.model1_name=f'box{self.box_ids.pop(0)}'
         req.link1_name='link'
@@ -59,11 +82,17 @@ class PickAndDrop (Move):
             self.get_logger().info('GripperMagnetOFF service call failed')
 
     def pick_and_drop (self, box_ids):
+        """
+        Pick and drop the specified boxes using gripper control and MoveIt motion.
+
+        Args:
+            box_ids (list): List of box IDs to pick and drop.
+        """
         self.box_ids = box_ids
         # The drop pose, that must be visited after every box
         box_offset = 0.3    # Box dimensions are (0.16) * (0.22*0.24), as (depth) * (marker face)
         drop_pose = {
-            'position': np.array([-0.5, -box_offset, 0.2]), # Leftmost box position; `box_offset`m to the left of the Task1B drop position
+            'position': np.array([-0.55, -box_offset, 0.2]), # Leftmost box position; `box_offset`m to the left of the Task1B drop position
             'shoulder': -math.pi,
             'retract': False,
             'callback': self.detach_box_from_gripper,

@@ -25,7 +25,7 @@ import math, statistics, time
 class RobotDockingController(Node):
 
     def __init__(self):
-        super().__init__('my_robot_docking_controller')
+        super().__init__('robot_docking_controller')
 
         self.callback_group = ReentrantCallbackGroup()
 
@@ -38,7 +38,7 @@ class RobotDockingController(Node):
         self.ultrasonic_rr_sub = self.create_subscription(Range, '/ultrasonic_rr/scan', self.ultrasonic_rr_callback, 10)
 
         # Create a ROS2 service for controlling docking behavior, can add another custom service message
-        self.dock_control_srv = self.create_service(DockSw, 'dock_control', self.dock_control_callback, callback_group=self.callback_group)
+        self.dock_control_srv = self.create_service(DockSw, '/dock_control', self.dock_control_callback, callback_group=self.callback_group)
 
         # Create a publisher for sending velocity commands to the robot
         self.cmd_vel_pub = self.create_publisher (Twist, '/cmd_vel', 10)
