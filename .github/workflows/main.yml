@@ -2,7 +2,7 @@ name: Remote Slot Testing Setup
 on:
   push:
     tags:
-      - slot*
+      - 'slot*'
 
 jobs:
   setup-branch:
