@@ -13,14 +13,11 @@
 
 
 import rclpy
-from rclpy.task import Future
 from task1b import Move
-from task1a import aruco_tf
 import tf2_ros
 from scipy.spatial.transform import Rotation as R
 import numpy as np
 import math, time
-import task1b
 import threading
 from rclpy.callback_groups import ReentrantCallbackGroup
 
@@ -98,7 +95,6 @@ class PickAndDrop (Move):
         """
         self.box_ids = box_ids
         # The drop pose, that must be visited after every box
-        box_offset = 0.3    # Box dimensions are (0.16) * (0.22*0.24), as (depth) * (marker face)
         drop_pose = {
             'position': np.array([-0.55, None, 0.4]), # Leftmost box position; 0.3m (which is box width) to the left of the Task1B drop position
             'shoulder': math.pi,

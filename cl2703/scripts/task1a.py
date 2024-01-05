@@ -36,10 +36,10 @@ import math
 import tf2_ros
 import numpy as np
 from rclpy.node import Node
-from cv_bridge import CvBridge, CvBridgeError
+from cv_bridge import CvBridge
 from geometry_msgs.msg import TransformStamped
 from scipy.spatial.transform import Rotation as R
-from sensor_msgs.msg import CompressedImage, Image
+from sensor_msgs.msg import  Image
 
 
 ##################### FUNCTION DEFINITIONS #######################
@@ -232,15 +232,6 @@ class aruco_tf(Node):
         Description: The main aruco detection routine. Calls detect_aruco and uses the result to publish TFs
         '''
 
-        ############ Function VARIABLES ############
-        # Keeping these here for now; but do we really need them?
-        sizeCamX = 1280
-        sizeCamY = 720
-        centerCamX = 640 
-        centerCamY = 360
-        focalX = 931.1829833984375
-        focalY = 931.1829833984375
-
         if (self.cv_image is None): return
 
         center_aruco_list, distance_from_rgb_list, angle_aruco_list, width_aruco_list, ids = detect_aruco (self.cv_image)
@@ -252,7 +243,7 @@ class aruco_tf(Node):
         if not self.base_cam_tf:
             try:
                 self.base_cam_tf = self.tf_buffer.lookup_transform (
-                        'camera_link', f'base_link',
+                        'camera_link', 'base_link',
                         rclpy.time.Time()
                 )
             except tf2_ros.LookupException as e:

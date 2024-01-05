@@ -11,8 +11,6 @@
 from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
-from rclpy.node import Node
-import tf2_ros
 import rclpy
 import time
 from scipy.spatial.transform import Rotation as R
@@ -61,7 +59,7 @@ class Navigator (BasicNavigator):
             self.get_clock().sleep_for (rclpy.time.Duration(seconds = 0.1))
             cur_angle = R.from_quat ([0.0, 0.0, self.robot_pose.pose.orientation.z, self.robot_pose.pose.orientation.w]).as_euler ('xyz')[2]
         #print ('aligned')
-        spin (0.0)
+        self.spin (0.0)
 
     def navigate (self, fin_pose):
         """

@@ -23,7 +23,7 @@ class PickAndDropHW (PickAndDrop):
         # Controller mode switching
         self.__contolMSwitch = self.create_client(SwitchController, "/controller_manager/switch_controller", callback_group=callback_group)
         while not self.__contolMSwitch.wait_for_service(timeout_sec=5.0):
-            self.get_logger().warn(f"Service control Manager is not yet available...")
+            self.get_logger().warn("Service control Manager is not yet available...")
 
 
     def pose_goal (self, *pargs, **kargs):

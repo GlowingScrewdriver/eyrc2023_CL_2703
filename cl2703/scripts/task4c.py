@@ -3,7 +3,7 @@
 from task3b import get_package_config
 from task2b import RackShift
 from task2a import PickAndDrop
-import tf2_ros, rclpy, threading
+import rclpy, threading
 
 if __name__ == "__main__":
     rclpy.init ()

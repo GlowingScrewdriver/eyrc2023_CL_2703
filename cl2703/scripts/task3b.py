@@ -11,8 +11,7 @@
 
 from task2b import RackShift
 from task2a import PickAndDrop
-import tf2_ros, rclpy, threading
-import yaml
+import rclpy, threading
 from config_utils import get_package_config
 
 if __name__ == "__main__":

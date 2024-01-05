@@ -11,14 +11,14 @@
 # ============================================================
 
 from task1c import Navigator
-from geometry_msgs.msg import Pose, PoseStamped, Twist, Polygon, Point32
+from geometry_msgs.msg import PoseStamped, Twist, Polygon, Point32
 from nav_msgs.msg import Odometry
 from linkattacher_msgs.srv import AttachLink, DetachLink
 from ebot_docking.srv import DockSw
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
-from math import sin, cos, asin, acos, pi
+from math import sin, cos, acos, pi
 import time, threading, numpy as np
 from scipy.spatial.transform import Rotation as R
 
@@ -205,7 +205,7 @@ class RackShift (Node):
 
         self.navigator.navigate (pickup_pose)
         self.adjust_pose (pickup_pose_pre)
-        print (f'Reached rack')
+        print ('Reached rack')
 
         # Dock and pick up the rack
         self.dock_req.orientation = pickup_pose['rot']
@@ -214,7 +214,7 @@ class RackShift (Node):
 #        self.attach_req.model2_name = pose['rack']
 #        print (self.attach_cli.call (self.attach_req))
         self.rack_grip (pose['rack'], True)
-        print (f'Attached rack')
+        print ('Attached rack')
 
         # Update the footprint to include the edge of the rack
         self.fp_pub.publish (self.ebot_rack_fp)
@@ -226,7 +226,7 @@ class RackShift (Node):
             (drop_pose['trans'][1] + sin(drop_pose['rot'])*1.5),
         ]
         self.navigator.navigate (drop_pose)
-        print (f'Reached arm pose')
+        print ('Reached arm pose')
 
         self.adjust_pose (pose['drop'])
 
@@ -234,7 +234,7 @@ class RackShift (Node):
 #        self.detach_req.model2_name = pose['rack']
 #        print (self.detach_cli.call (self.detach_req))
         self.rack_grip (pose['rack'], False)
-        print (f'Detached rack')
+        print ('Detached rack')
 
         # Update the footprint
         self.fp_pub.publish (self.ebot_fp)

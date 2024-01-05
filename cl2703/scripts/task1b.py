@@ -9,25 +9,14 @@
 # Classes:          Move(Node) 
 # Globals:          no_tf, detector, params
 
-from math import cos, sin
-import math, time
 import numpy as np
-from copy import deepcopy
 import rclpy
 import tf2_ros
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
-from geometry_msgs.msg import TwistStamped, Twist, TransformStamped
-import tf2_geometry_msgs
+from geometry_msgs.msg import TwistStamped
 from pymoveit2 import MoveIt2
-from threading import Thread
 from pymoveit2.robots import ur5
-from rclpy.qos import (
-    QoSDurabilityPolicy,
-    QoSHistoryPolicy,
-    QoSProfile,
-    QoSReliabilityPolicy,
-)
 
 class Move(Node):
     def motion(self):
@@ -63,7 +52,7 @@ class Move(Node):
             try:
                 base_eef_tf = self.tf_buffer.lookup_transform (
                     #'base_link', f'wrist_3_link',
-                    'base_link', f'tool0',
+                    'base_link', 'tool0',
                     rclpy.time.Time()
                 )
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException) as e:
