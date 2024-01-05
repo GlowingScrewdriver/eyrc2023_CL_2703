@@ -9,15 +9,6 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     ctx = launch.launch_context.LaunchContext ()
     return launch.LaunchDescription([
-        launch.actions.DeclareLaunchArgument(name='gui', default_value='True',
-                                            description='Flag to enable joint_state_publisher_gui'),
-        launch.actions.DeclareLaunchArgument(name='use_sim_time', default_value='True',
-                                            description='Flag to enable use_sim_time'),
-
-        # UR5 Arm and Moveit! stack
-        IncludeLaunchDescription (PythonLaunchDescriptionSource (
-            os.path.join (get_package_share_directory('ur5_moveit'), 'launch/spawn_ur5_launch_moveit.launch.py')
-        )),
 
         # Navigator2 stack
         IncludeLaunchDescription (PythonLaunchDescriptionSource (
@@ -29,6 +20,13 @@ def generate_launch_description():
             package='ebot_docking',
             executable='ebot_docking_service_task2b.py',
         ),
+
+        # UR5 Arm and Moveit! stack
+        launch.actions.TimerAction (period = 7.0, actions = [
+            IncludeLaunchDescription (PythonLaunchDescriptionSource (
+                os.path.join (get_package_share_directory('ur5_moveit'), 'launch/spawn_ur5_launch_moveit.launch.py')
+            )),
+        ]),
 
         # Servo node trigger
         launch.actions.ExecuteProcess(

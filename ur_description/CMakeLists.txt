@@ -20,9 +20,6 @@ if(BUILD_TESTING)
 endif()
  
 install(PROGRAMS
-  scripts/task1a.py
-  scripts/task1b.py
-  scripts/task1c.py
   scripts/armed/spawner_box_com.py
   DESTINATION lib/${PROJECT_NAME}
 )
