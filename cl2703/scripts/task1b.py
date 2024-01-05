@@ -18,6 +18,7 @@ import tf2_ros
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
 from geometry_msgs.msg import TwistStamped, Twist, TransformStamped
+import tf2_geometry_msgs
 from pymoveit2 import MoveIt2
 from threading import Thread
 from pymoveit2.robots import ur5
@@ -37,22 +38,32 @@ class Move(Node):
 
         Refer self.destinations assignment (commented out) under __init__
         """
+
+        CbPending = False # This flag determines when the destination callback is called
         while True:
+            # If target is reached
+            if CbPending:
+                self.dest['callback'] ()
+                if self.dest['retract']: # We may not need to retract after reaching some positions
+                    self.pose_goal (self.dest['shoulder'], retract=True)
+                self.dest = None
+                CbPending = False
+
             # What to do if the previous target has been reached
             if not self.dest:
                 if not self.destinations:
-                    self.future.set_result (1)
                     return
                 self.dest = self.destinations.pop(0)
                 self.pose_goal (self.dest['shoulder'])
                 print (f'Moving to position {self.dest}')
+
 
             # What follows is the servo logic, carried out after calling pose_goal() for each target
             now = self.get_clock().now()
             try:
                 base_eef_tf = self.tf_buffer.lookup_transform (
                     #'base_link', f'wrist_3_link',
-                    'base_link', f'ee_link',
+                    'base_link', f'tool0',
                     rclpy.time.Time()
                 )
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException) as e:
@@ -68,23 +79,15 @@ class Move(Node):
             dest_pos = self.dest['position'] - eef_pos
             dist = sum(dest_pos**2)**0.5
 
-            if (dist < 0.02): # Endpoint for a servo motion (i.e. a target is reached)
+            if (dist < 0.10): # Endpoint for a servo motion (i.e. a target is reached)
+                # Stop the servo motion and set the callback-pending flag
                 dest_pos *= 0
                 print ('Reached destination')
-                self.dest['callback'] ()
-                if self.dest['retract']: # We may not need to retract after reaching some positions
-                    self.pose_goal (self.dest['shoulder'], retract=True)
-#                    self.dest['position'] = [
-#                        self.dest['position'][0] - 0.3 * cos(self.dest['shoulder']),
-#                        self.dest['position'][1] - 0.3 * sin(self.dest['shoulder']),
-#                        self.dest['position'][2],
-#                    ]
-                    #self.dest['retract'] = False
-                #else:
-                self.dest = None
+                CbPending = True
             dest_vel = (dest_pos / dist) * 0.4 # Servo motion at 0.4 metres/second
 
             self.__twist_msg.header.stamp = now.to_msg()
+            self.__twist_msg.header.frame_id = 'base_link'
             self.__twist_msg.twist.linear.x = dest_vel[0]
             self.__twist_msg.twist.linear.y = dest_vel[1]
             self.__twist_msg.twist.linear.z = dest_vel[2]
@@ -171,11 +174,7 @@ class Move(Node):
 #        ]
         self.destinations = []
         self.dest = None
-        self.future = rclpy.Future ()
 
-        def start_motion (self):
-            self.future.__init__ ()
-            self.timer = self.create_timer (0.02, self.motion)
         # Control flow goes something like:
         # 0. Initially, `dest_list` contains the full list of targets desired and `dest` is set to `None`
         # 1. First target from `dest_list` is popped and assigned to `dest` (this is the "current target")

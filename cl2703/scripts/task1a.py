@@ -107,8 +107,8 @@ detector, params = cv2.aruco.ArucoDetector(), cv2.aruco.DetectorParameters()
 
 # Detector parameters; these determine the accuracy of aruco detection
 params.adaptiveThreshConstant = 20
-params.adaptiveThreshWinSizeMin, params.adaptiveThreshWinSizeMax, adaptiveThreshWinSizeStep = 13, 23, 5
-#params.minMarkerPerimeterRate = 0.1
+params.adaptiveThreshWinSizeMin, params.adaptiveThreshWinSizeMax, params.adaptiveThreshWinSizeStep = 11, 11, 6
+params.minMarkerPerimeterRate = 0.1
 params.perspectiveRemovePixelPerCell = 3
 params.perspectiveRemoveIgnoredMarginPerCell = 0.13
 detector.setDetectorParameters (params)
@@ -176,9 +176,10 @@ def detect_aruco(image):
     angle_aruco_list, distance_from_rgb_list, objpts = cv2.aruco.estimatePoseSingleMarkers (corners_fil, size_of_aruco_m, cam_mat, dist_mat)
 
     if no_tf: # Some extra debug info if not publishing TFs
-        th_img = cv2.adaptiveThreshold(gray_img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY,params.adaptiveThreshWinSizeMin,params.adaptiveThreshConstant)
-        cv2.aruco.drawDetectedMarkers (th_img, rejectedCandidates)
-        cv2.imshow ('Threshold', th_img)
+        for winsize in range (params.adaptiveThreshWinSizeMin, params.adaptiveThreshWinSizeMax + 1, params.adaptiveThreshWinSizeStep):
+            th_img = cv2.adaptiveThreshold(gray_img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, winsize, params.adaptiveThreshConstant)
+            cv2.aruco.drawDetectedMarkers (th_img, rejectedCandidates)
+            cv2.imshow (f'Threshold -- WinSize {winsize}', th_img)
 
     # Report some useful results on the OpenCV output image
     for n in range (len(ids_fil)):

@@ -197,19 +197,23 @@ class RackShift (Node):
         # Unit vector pointing away from the rack.
         away = np.array ([cos(pose['pickup']['rot']), sin(pose['pickup']['rot'])])
         pickup_pose = pose['pickup'].copy ()
+        pickup_pose_pre = pose['pickup'].copy ()
+
         # Put the ebot some distance in front of the rack.
-        pickup_pose['trans'] = 1.1*away + pickup_pose['trans']
+        pickup_pose['trans'] = 1.1*away + pose['pickup']['trans']
+        pickup_pose_pre['trans'] = 0.5*away + pose['pickup']['trans']
 
         self.navigator.navigate (pickup_pose)
-        self.adjust_pose (pickup_pose)
+        self.adjust_pose (pickup_pose_pre)
         print (f'Reached rack')
 
         # Dock and pick up the rack
         self.dock_req.orientation = pickup_pose['rot']
         self.dock_cli.call(self.dock_req)
         #pretty_print_pose(self.navigator.robot_pose)
-        self.attach_req.model2_name = pose['rack']
-        print (self.attach_cli.call (self.attach_req))
+#        self.attach_req.model2_name = pose['rack']
+#        print (self.attach_cli.call (self.attach_req))
+        self.rack_grip (pose['rack'], True)
         print (f'Attached rack')
 
         # Update the footprint to include the edge of the rack
@@ -227,13 +231,24 @@ class RackShift (Node):
         self.adjust_pose (pose['drop'])
 
         # Detach the rack
-        self.detach_req.model2_name = pose['rack']
-        print (self.detach_cli.call (self.detach_req))
+#        self.detach_req.model2_name = pose['rack']
+#        print (self.detach_cli.call (self.detach_req))
+        self.rack_grip (pose['rack'], False)
         print (f'Detached rack')
 
         # Update the footprint
         self.fp_pub.publish (self.ebot_fp)
+        self.navigator.navigate (drop_pose)
         #pretty_print_pose(self.navigator.robot_pose)
+
+    def rack_grip (self, rack, state = True):
+        '''Pick up the rack'''
+
+        if state == True: req, cli = self.attach_req, self.attach_cli
+        else:             req, cli = self.detach_req, self.detach_cli
+
+        req.model2_name = rack
+        print (cli.call (req))
 
 if __name__ == "__main__":
     rclpy.init ()
@@ -246,9 +261,9 @@ if __name__ == "__main__":
 
     rack_pose_info = {
         # Rack pickup and drop poses
-            'pickup': {'trans': [1.26, 4.35], 'rot': 3.14}, # Initial position of the rack
-            'drop': {'trans': [0.5, -2.455], 'rot': 3.14},  # Drop position of the rack
-            'rack': 'rack1',
+        'pickup': {'trans': [1.26, 4.35], 'rot': 3.14}, # Initial position of the rack
+        'drop': {'trans': [0.5, -2.455], 'rot': 3.14},  # Drop position of the rack
+        'rack': 'rack1',
     }
     # Note: These are NOT the expected robot poses; these are the exact rack poses
 

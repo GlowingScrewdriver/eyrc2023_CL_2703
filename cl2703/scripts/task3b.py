@@ -27,6 +27,10 @@ def get_package_config (filename):
     rack_info = yaml.safe_load (config_f)
     config_f.close ()
 
+    drop_f = open ('poses.yaml')
+    drop_poses = yaml.safe_load (drop_f)
+    drop_f.close ()
+
     rack_poses = []
     box_ids = rack_info['package_id']
     for box in box_ids:
@@ -35,7 +39,8 @@ def get_package_config (filename):
                 rack = rack[f'rack{box}']
                 rack_poses += [{
                     'pickup': {'trans': [rack[0], rack[1]], 'rot': rack[2]},
-                    'drop': {'trans': [0.85, -2.455], 'rot': 3.14},
+                    #'drop': {'trans': [0.85, -2.455], 'rot': 3.14},
+                    'drop': drop_poses.pop (),
                     'rack': f'rack{box}',
                     'box': box,
                 }]
@@ -64,10 +69,9 @@ if __name__ == "__main__":
 
     for rack in rack_pose_info:
         docker.rack_shift (rack)
-        #input ('Press [enter] to continue with the task')
-        docker.get_clock().sleep_for (rclpy.time.Duration(seconds = 0.5))
-        arm_control.pick_and_drop ([ rack['box'] ])
-        arm_control.motion ()
+        input ('Press [enter] to continue with the task')
+        #arm_control.pick_and_drop ([ rack['box'] ])
+        #arm_control.motion ()
     
     rclpy.shutdown ()
     exit ()

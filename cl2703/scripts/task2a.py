@@ -26,7 +26,6 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 
 from linkattacher_msgs.srv import AttachLink, DetachLink
 
-
 class PickAndDrop (Move):
     def __init__(self, name):
         """
@@ -40,11 +39,16 @@ class PickAndDrop (Move):
         self.client1 = self.create_client(AttachLink, '/GripperMagnetON', callback_group=callback_group)
         self.client2 = self.create_client(DetachLink, '/GripperMagnetOFF', callback_group=callback_group)
 
+        self.box_y = -0.3 # This is the y-coordinate of the current box
+        self.box_width = 0.3 # This is added to box_y every time a box is dropped
+
     # Attaching the box to the gripper
     def attach_box_with_gripper(self):
         """
         Attach the box to the gripper using the AttachLink service.
         """
+        self.get_clock().sleep_for (rclpy.time.Duration(seconds = 1.0))
+
         req = AttachLink.Request()
         req.model1_name=f'box{self.box_ids[0]}'
         req.link1_name='link'
@@ -59,6 +63,8 @@ class PickAndDrop (Move):
             self.get_logger().info('GripperMagnetON service call was successful')
         else:
             self.get_logger().info('GripperMagnetON service call failed')
+
+        self.get_logger().info (future.result().message)
 
     # Detaching the box from the gripper
     def detach_box_from_gripper(self):
@@ -81,6 +87,8 @@ class PickAndDrop (Move):
         else:
             self.get_logger().info('GripperMagnetOFF service call failed')
 
+        self.get_logger().info (future.result().message)
+
     def pick_and_drop (self, box_ids):
         """
         Pick and drop the specified boxes using gripper control and MoveIt motion.
@@ -92,9 +100,9 @@ class PickAndDrop (Move):
         # The drop pose, that must be visited after every box
         box_offset = 0.3    # Box dimensions are (0.16) * (0.22*0.24), as (depth) * (marker face)
         drop_pose = {
-            'position': np.array([-0.55, -box_offset, 0.2]), # Leftmost box position; `box_offset`m to the left of the Task1B drop position
-            'shoulder': -math.pi,
-            'retract': False,
+            'position': np.array([-0.55, None, 0.4]), # Leftmost box position; 0.3m (which is box width) to the left of the Task1B drop position
+            'shoulder': math.pi,
+            'retract': True, #'retract': False,
             'callback': self.detach_box_from_gripper,
         }
         self.destinations = []
@@ -116,6 +124,8 @@ class PickAndDrop (Move):
             # the first two Y-Z-Y rotations put the box's marker on a vertical plane
             # Thus, the third rotation corresponds to the required shoulder angle
             p_rot = R.from_quat(p_quat).as_euler ('YZY')[2]
+            if p_rot < -math.pi / 4:
+                p_rot += 2*math.pi
 
 
             dest = {
@@ -127,8 +137,10 @@ class PickAndDrop (Move):
             # Make a copy of the drop pose and add the box offset to the original drop pose dict
             drop_pose_adj = drop_pose.copy ()
             drop_pose_adj['position'] = drop_pose_adj['position'].copy ()
-            drop_pose['position'][1] += box_offset
+            drop_pose_adj['position'][1] = self.box_y
             self.destinations += [dest, drop_pose_adj]
+
+            self.box_y += self.box_width
 
 if __name__ == "__main__":
     rclpy.init ()
@@ -141,7 +153,7 @@ if __name__ == "__main__":
     th = threading.Thread (target = executor.spin)
     th.start ()
 
-    node.pick_and_drop ([1])
+    node.pick_and_drop ([1, 3, 49])
     node.motion ()
 
     rclpy.shutdown ()
