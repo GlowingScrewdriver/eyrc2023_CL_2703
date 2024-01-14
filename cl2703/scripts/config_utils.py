@@ -1,4 +1,5 @@
 import yaml
+from math import pi
 
 def get_package_config (filename):
     '''
@@ -7,29 +8,56 @@ def get_package_config (filename):
     Args:
         filename (str): configuration filename. Usually `config.yaml`, provided by eYRC
     Returns:
-        rack info dictionary. Refer rack_pose_info assignment under __name__ == "__main__" for details
+        rack info dictionary. Refer rack_pose_info assignment under __name__ == "__main__" in task2b.py for details
     '''
-    config_f = open ('config.yaml')
-    rack_info = yaml.safe_load (config_f)
+
+    arm_pos = [1.6, -2.45]
+
+    config_f = open (filename)
+    config = yaml.safe_load(config_f)
     config_f.close ()
+    
+    box_ids = config['package_id']
+    rack_info = []
+    for rack in config['position']:
+        rack = list(rack.items ())[0]
+        _id = rack[0].split("rack")[1]
+        if not int(_id) in box_ids: continue
+        trans = rack[1][0:2]
+        rot = rack[1][2]
+        rack_info += [{
+            'pickup': { 'trans': trans, 'rot': rot },
+            'rack': f'rack{_id}',
+            'box': int(_id)
+        }]
+    rack_info.sort (key = lambda rack:
+        (rack['pickup']['trans'][0] - arm_pos[0])**2 + (rack['pickup']['trans'][1] - arm_pos[1])**2
+    )
 
-    drop_f = open ('poses.yaml')
-    drop_poses = yaml.safe_load (drop_f)
-    drop_f.close ()
+    approach_angles = {1: [0.0, 0.8], 2: [-0.8, 0.0], 3: [0.0, -0.8]} # n: [x, y] => approach at n*pi/2, reach offset (x,y) from arm
+    for rack in rack_info:
+        x, y = rack['pickup']['trans']
+        x -= arm_pos[0]; y -= arm_pos[1]
 
-    rack_poses = []
-    box_ids = rack_info['package_id']
-    for box in box_ids:
-        for rack in rack_info['position']:
-            if f'rack{box}' in rack:
-                rack = rack[f'rack{box}']
-                rack_poses += [{
-                    'pickup': {'trans': [rack[0], rack[1]], 'rot': rack[2]},
-                    #'drop': {'trans': [0.85, -2.455], 'rot': 3.14},
-                    'drop': drop_poses.pop (),
-                    'rack': f'rack{box}',
-                    'box': box,
-                }]
-                break
+        # ap is angle at which rack approaches arm, represented as a multiple of pi/2
+        ap = abs(y) > abs(x)  # points along +y if y component is greater
+        if x + y < 0: ap += 2 # reversed if the larger component is less than 0
 
-    return rack_poses
+        if ap not in approach_angles:
+            drop = None
+        else:
+            drop = (ap, approach_angles.pop (ap)) # Approach angle, final position
+        rack['drop'] = drop
+
+
+    for rack in rack_info:
+        ap, pos = rack['drop'] or approach_angles.popitem ()
+        pos[0] += arm_pos[0]; pos[1] += arm_pos[1]
+        rack['drop'] = {'trans': pos, 'rot': ap * pi / 2}
+
+    return rack_info
+
+
+if __name__ == "__main__":
+    for i in get_package_config ("../../../config.yaml"):
+        print (i)
