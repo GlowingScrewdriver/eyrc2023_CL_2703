@@ -8,6 +8,8 @@ find_package(ament_cmake_python REQUIRED)
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
+ament_python_install_package (${PROJECT_NAME})
+
 install( # Launch files
   DIRECTORY
     launch

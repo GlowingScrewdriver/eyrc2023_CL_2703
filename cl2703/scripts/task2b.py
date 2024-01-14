@@ -10,11 +10,11 @@
 # Classes:          RackShift
 # ============================================================
 
-from task1c import Navigator
+from cl2703.task1c import Navigator
 from geometry_msgs.msg import PoseStamped, Twist, Polygon, Point32
 from nav_msgs.msg import Odometry
-from linkattacher_msgs.srv import AttachLink, DetachLink
 from ebot_docking.srv import DockSw
+from linkattacher_msgs.srv import AttachLink, DetachLink
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
@@ -53,7 +53,7 @@ class RackShift (Node):
     '''
     Class to simplify navigation.
 
-    This class serves as a wrapper around class Navigator from task1c, and provides
+    This class serves as a wrapper around class Navigator from cl2703.task1c, and provides
     convenience functions for shifting racks
     '''
 

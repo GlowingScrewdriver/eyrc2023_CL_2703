@@ -4,7 +4,7 @@ import rclpy
 import threading
 from config_utils import get_package_config
 from usb_relay.srv import RelaySw
-from task2b import RackShift
+from cl2703.task2b import RackShift
 
 class RackShiftHW (RackShift):
     def __init__ (self):
