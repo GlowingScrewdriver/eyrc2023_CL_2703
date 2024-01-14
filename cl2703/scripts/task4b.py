@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from task2a import PickAndDrop
+from cl2703.task2a import PickAndDrop
 from ur_msgs.srv import SetIO
 from controller_manager_msgs.srv import SwitchController # module call
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -94,7 +94,7 @@ if __name__ == "__main__":
     th = threading.Thread (target = executor.spin)
     th.start ()
 
-    node.pick_and_drop ([2])
+    node.pick_and_drop ([3, 49])
     node.motion ()
 
     rclpy.shutdown ()

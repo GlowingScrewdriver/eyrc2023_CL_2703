@@ -10,6 +10,7 @@
 # Globals:          no_tf, detector, params
 
 import numpy as np
+from math import cos, sin
 import rclpy
 import tf2_ros
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -34,12 +35,21 @@ class Move(Node):
             if CbPending:
                 self.dest['callback'] ()
                 if self.dest['retract']: # We may not need to retract after reaching some positions
-                    self.pose_goal (self.dest['shoulder'], retract=True)
+                    #self.pose_goal (self.dest['shoulder'], retract=True)
+                    # Move 0.2 metres away from the box
+                    self.dest['position'][0] -= cos (self.dest['shoulder']) * 0.3
+                    self.dest['position'][1] -= sin (self.dest['shoulder']) * 0.3
+                    #self.dest['position'][0:2] = 0.0, 0.0
+                    self.dest['retract'] = False
+                    self.dest['callback'] = lambda: None
+                    CbPending = False
+                    continue
                 self.dest = None
                 CbPending = False
 
             # What to do if the previous target has been reached
             if not self.dest:
+                print (self.box_ids)
                 if not self.destinations:
                     return
                 self.dest = self.destinations.pop(0)
@@ -68,7 +78,7 @@ class Move(Node):
             dest_pos = self.dest['position'] - eef_pos
             dist = sum(dest_pos**2)**0.5
 
-            if (dist < 0.10): # Endpoint for a servo motion (i.e. a target is reached)
+            if (dist < 0.01): # Endpoint for a servo motion (i.e. a target is reached)
                 # Stop the servo motion and set the callback-pending flag
                 dest_pos *= 0
                 print ('Reached destination')

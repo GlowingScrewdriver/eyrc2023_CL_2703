@@ -13,7 +13,7 @@
 
 
 import rclpy
-from task1b import Move
+from cl2703.task1b import Move
 import tf2_ros
 from scipy.spatial.transform import Rotation as R
 import numpy as np
@@ -36,8 +36,11 @@ class PickAndDrop (Move):
         self.client1 = self.create_client(AttachLink, '/GripperMagnetON', callback_group=callback_group)
         self.client2 = self.create_client(DetachLink, '/GripperMagnetOFF', callback_group=callback_group)
 
-        self.box_y = -0.3 # This is the y-coordinate of the current box
+        self.box_y = -2.5 # This is the y-coordinate of the current box
         self.box_width = 0.3 # This is added to box_y every time a box is dropped
+
+        self.destinations = []
+        self.box_ids = []
 
     # Attaching the box to the gripper
     def attach_box_with_gripper(self):
@@ -93,15 +96,14 @@ class PickAndDrop (Move):
         Args:
             box_ids (list): List of box IDs to pick and drop.
         """
-        self.box_ids = box_ids
+        self.box_ids += box_ids
         # The drop pose, that must be visited after every box
         drop_pose = {
-            'position': np.array([-0.55, None, 0.4]), # Leftmost box position; 0.3m (which is box width) to the left of the Task1B drop position
+            'position': np.array([-0.62, None, 0.5]), # Leftmost box position; 0.3m (which is box width) to the left of the Task1B drop position
             'shoulder': math.pi,
             'retract': True, #'retract': False,
             'callback': self.detach_box_from_gripper,
         }
-        self.destinations = []
         for box in box_ids:
             tf = None
             while tf is None:
@@ -149,7 +151,7 @@ if __name__ == "__main__":
     th = threading.Thread (target = executor.spin)
     th.start ()
 
-    node.pick_and_drop ([1, 3, 49])
+    node.pick_and_drop ([3, 49])
     node.motion ()
 
     rclpy.shutdown ()
