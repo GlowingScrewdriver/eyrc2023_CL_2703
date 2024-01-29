@@ -8,18 +8,20 @@
 # The script handles both linear and angular motion to achieve docking alignment and execution.
 # ###
 
+HWArena = __name__ == "ebot_docking_service_hw"
+
 # Import necessary ROS2 packages and message types
 import rclpy
 from rclpy.node import Node
-from nav_msgs.msg import Odometry
-from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
-from geometry_msgs.msg import Twist, PoseStamped
-from sensor_msgs.msg import Range
+from geometry_msgs.msg import Twist
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
-from tf_transformations import euler_from_quaternion
 from ebot_docking.srv import DockSw  # Import custom service message
-import math, statistics, time
+from scipy.spatial.transform import Rotation as R
+from threading import Thread
+from math import pi
+if HWArena: from std_msgs.msg import Float32MultiArray, Float32
+else: from sensor_msgs.msg import Range, Imu
 
 # Define a class for your ROS2 node
 class RobotDockingController(Node):
@@ -29,13 +31,15 @@ class RobotDockingController(Node):
 
         self.callback_group = ReentrantCallbackGroup()
 
-        self.robot_pose = None; self.odom_pose = None; self.yaw = None
-        self.odom_sub = self.create_subscription(Odometry, 'odom', self.odometry_callback, 10)
-
         # Subscribe to ultrasonic sensor data for distance measurements
-        self.range_right = None; self.range_left = None
-        self.ultrasonic_rl_sub = self.create_subscription(Range, '/ultrasonic_rl/scan', self.ultrasonic_rl_callback, 10)
-        self.ultrasonic_rr_sub = self.create_subscription(Range, '/ultrasonic_rr/scan', self.ultrasonic_rr_callback, 10)
+        self.range_right = None; self.range_left = None; self.orientation = None
+        if HWArena:
+            self.ultra_sub = self.create_subscription(Float32MultiArray, 'ultrasonic_sensor_std_float', self.ultra_callback_hw, 10)
+            self.imu_sub = self.create_subscription(Float32, '/orientation', self.imu_callback_hw, 10)
+        else:
+            self.ultrasonic_rl_sub = self.create_subscription(Range, '/ultrasonic_rl/scan', self.ultrasonic_rl_callback, 10)
+            self.ultrasonic_rr_sub = self.create_subscription(Range, '/ultrasonic_rr/scan', self.ultrasonic_rr_callback, 10)
+            self.imu_sub = self.create_subscription(Imu, '/imu', self.imu_callback, 10)
 
         # Create a ROS2 service for controlling docking behavior, can add another custom service message
         self.dock_control_srv = self.create_service(DockSw, '/dock_control', self.dock_control_callback, callback_group=self.callback_group)
@@ -49,19 +53,6 @@ class RobotDockingController(Node):
         self.controller_timer = self.create_timer(0.1, self.controller_loop)
 
         self.spin_dir = 0 # =1 for spin in positive z-axis
-
-    # Callback function for odometry data
-    def odometry_callback(self, msg):
-#        self.odom_pose = PoseStamped (pose=msg.pose.pose, header=msg.header); self.odom_pose.header.frame_id = 'map'
-#        if not self.robot_pose: self.robot_pose = [0.0, 0.0, 0.0]
-#        # Extract and update robot pose information from odometry message
-#        self.robot_pose[0] = msg.pose.pose.position.x
-#        self.robot_pose[1] = msg.pose.pose.position.y
-        quaternion_array = msg.pose.pose.orientation
-        orientation_list = [quaternion_array.x, quaternion_array.y, quaternion_array.z, quaternion_array.w]
-        _, _, yaw = euler_from_quaternion(orientation_list)
-#        self.robot_pose[2] = yaw
-        self.robot_yaw = yaw
 
     def spin (self, rate):
         vel = Twist ()
@@ -77,11 +68,29 @@ class RobotDockingController(Node):
         vel.linear.x = -rate # The robot moves _backwards_ at a positive pace
         self.cmd_vel_pub.publish (vel)
 
+    ### Topic/service callbacks, Gazebo ###
     def ultrasonic_rl_callback(self, msg):
         self.range_left = msg.range
     def ultrasonic_rr_callback(self, msg):
         self.range_right = msg.range
 
+    def imu_callback (self, msg):
+        self.orientation = R.from_quat ([
+            msg.orientation.x,
+            msg.orientation.y,
+            msg.orientation.z,
+            msg.orientation.w,
+        ]).as_euler ('zxy')[0]
+    ###
+
+    ### Topic callbacks, hardware arena ###
+    def ultra_callback_hw (self, msg):
+        self.range_left = msg.data[4]
+        self.range_right = msg.data[5]
+
+    def imu_callback_hw (self, msg):
+        self.orientation = msg.data - pi # So that -pi <= angle <= pi
+    ###
 
     def controller_loop(self):
         if not self.docking:
@@ -100,20 +109,13 @@ class RobotDockingController(Node):
 
             if angle_diff > 0: spin_dir = 1
             else: spin_dir = -1
+            self.spin (spin_dir * 0.05)
             if spin_dir + self.spin_dir == 0: # Robot has just passed the angle in which it faces the rack
-                print (f'switched over at range diff {angle_diff}')
-                self.spin (angle_diff/5) # angle_diff <= change of angle per loop time interval (0.1s)
+                self.spin (0.0)
+                self.aligned = True
                 return
-
-#            if angle_diff > 0: spin_dir = 1
-#            else: spin_dir = -1
-#            self.spin (spin_dir * 0.05)
-#            if spin_dir + self.spin_dir == 0: # Robot has just passed the angle in which it faces the rack
-#                self.spin (0.0)
-#                self.aligned = True
-#                return
-#            self.spin (spin_dir * 0.1)
-#            return
+            self.spin (spin_dir * 0.1)
+            return
 
         # This is reached if docking is in progress and alignment has been achieved
         if self.range_left < 0.1:
@@ -123,29 +125,8 @@ class RobotDockingController(Node):
         self.backup (0.2)
 
     # Callback function for the DockControl service
-    def dock_control_callback(self, request, response):
-        #while not self.robot_pose:
-        while not self.robot_yaw:
-            self.get_clock().sleep_for (rclpy.time.Duration(seconds = 0.5))
-            print ('waiting for odom pose')
-        #diff = request.orientation - self.robot_pose[2]
-        diff = request.orientation - self.robot_yaw
-        tolerance = 0.1 # Angle tolerance in radians
-
-        # To meet the spin tolerance limit,
-        # (spin rate) * (spin command interval) <= (spin tolerance)
-        # We accordingly taper down the rotation speed, so that in the last
-        # iteration of setting the speed, the spin rate satifies the above equation
-        # In the limiting case (last iteration), angular position difference (`diff`)
-        # approaches spin tolerance limit
-        while diff**2 > tolerance**2:
-            if diff > 0: rot=1
-            else: rot=-1
-            self.spin (rot * 0.7)
-            self.get_clock().sleep_for (rclpy.time.Duration(seconds = 0.1))
-            #diff = request.orientation - self.robot_pose[2]
-            diff = request.orientation - self.robot_yaw
-
+    if False:
+     def dock_control_callback(self, request, response):
         self.docking = True
         while self.docking:
             print ('Docking...')
@@ -155,9 +136,48 @@ class RobotDockingController(Node):
         response.success = True
         return response
 
+    else:
+     def dock_control_callback (self, request, response):
+        while self.orientation is None:
+            self.get_clock().sleep_for (rclpy.time.Duration(seconds = 0.5))
+
+        #angle_diff = request.orientation - self.orientation
+        #while (abs(angle_diff) > 0.05):
+        Aligned = False
+        Driven = False
+        AngleTolerance = 0.05 # Angular tolerance for alignment of the eBot with rack
+        DistanceTolerance = 0.1 # Distance tolerance for eBot to be touching the rack
+        while True:
+            if not Aligned: # Robot is not aligned
+                print ("Aligning...")
+                angle_diff = request.orientation - self.orientation
+                if angle_diff > 0: spin_dir = 1
+                else: spin_dir = -1
+                #if abs(angle_diff) < AngleTolerance:
+                if not spin_dir + self.spin_dir: # Robot has just passed 0 angle difference
+                    self.spin (0.0)
+                    Aligned = True
+                    continue
+
+                self.spin (spin_dir * 0.1)
+
+            elif not Driven: # Robot is aligned, but has not driven to the rack
+                print ("Driving...")
+                if self.range_left < DistanceTolerance:
+                    self.backup (0.0)
+                    Driven = True
+                    continue
+
+                self.backup (0.2)
+
+            else: # All done, we just have to end the service request
+                print ("Done")
+                response.success = True
+                return response
+
 # Main function to initialize the ROS2 node and spin the executor
-def main(args=None):
-    rclpy.init(args=args)
+if __name__ == '__main__':
+    rclpy.init()
 
     docking_controller = RobotDockingController()
 
@@ -166,10 +186,20 @@ def main(args=None):
     executor = MultiThreadedExecutor()
     executor.add_node(docking_controller)
 
+    docking_controller.declare_parameter ("test_dock", False)
+    print (docking_controller.get_parameter("test_dock").get_parameter_value().bool_value)
+    if docking_controller.get_parameter("test_dock").get_parameter_value().bool_value:
+        th = Thread (target = executor.spin)
+        th.start ()
+        print (docking_controller.dock_control_callback (
+            DockSw.Request (orientation = -1.57),
+            DockSw.Response ()
+        ))
+        executor.shutdown ()
+        exit ()
+
     executor.spin()
 
     docking_controller.destroy_node()
     rclpy.shutdown()
 
-if __name__ == '__main__':
-    main()

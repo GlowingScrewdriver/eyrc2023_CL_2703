@@ -35,11 +35,9 @@ class Move(Node):
             if CbPending:
                 self.dest['callback'] ()
                 if self.dest['retract']: # We may not need to retract after reaching some positions
-                    #self.pose_goal (self.dest['shoulder'], retract=True)
                     # Move 0.2 metres away from the box
-                    self.dest['position'][0] -= cos (self.dest['shoulder']) * 0.3
-                    self.dest['position'][1] -= sin (self.dest['shoulder']) * 0.3
-                    #self.dest['position'][0:2] = 0.0, 0.0
+                    self.dest['position'][0] -= cos (self.dest['shoulder']) * 0.13
+                    self.dest['position'][1] -= sin (self.dest['shoulder']) * 0.13
                     self.dest['retract'] = False
                     self.dest['callback'] = lambda: None
                     CbPending = False
@@ -54,6 +52,9 @@ class Move(Node):
                     return
                 self.dest = self.destinations.pop(0)
                 self.pose_goal (self.dest['shoulder'])
+                if self.dest['position'] is None:
+                    self.dest = None
+                    continue
                 print (f'Moving to position {self.dest}')
 
 
@@ -61,8 +62,8 @@ class Move(Node):
             now = self.get_clock().now()
             try:
                 base_eef_tf = self.tf_buffer.lookup_transform (
-                    #'base_link', f'wrist_3_link',
-                    'base_link', 'tool0',
+                    'base_link', 'wrist_3_link',
+                    #'base_link', 'ee_link',
                     rclpy.time.Time()
                 )
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException) as e:
@@ -78,12 +79,15 @@ class Move(Node):
             dest_pos = self.dest['position'] - eef_pos
             dist = sum(dest_pos**2)**0.5
 
-            if (dist < 0.01): # Endpoint for a servo motion (i.e. a target is reached)
+            tolerance = 0.12
+            if (dist < tolerance): # Endpoint for a servo motion (i.e. a target is reached)
                 # Stop the servo motion and set the callback-pending flag
                 dest_pos *= 0
                 print ('Reached destination')
                 CbPending = True
-            dest_vel = (dest_pos / dist) * 0.4 # Servo motion at 0.4 metres/second
+            if dist < tolerance * 1.5: vel = 0.2
+            else: vel = 0.5
+            dest_vel = (dest_pos / dist) * vel # Servo motion at `vel` metres/second
 
             self.__twist_msg.header.stamp = now.to_msg()
             self.__twist_msg.header.frame_id = 'base_link'

@@ -36,7 +36,7 @@ class PickAndDrop (Move):
         self.client1 = self.create_client(AttachLink, '/GripperMagnetON', callback_group=callback_group)
         self.client2 = self.create_client(DetachLink, '/GripperMagnetOFF', callback_group=callback_group)
 
-        self.box_y = -2.5 # This is the y-coordinate of the current box
+        self.box_y = -0.25 # This is the y-coordinate of the current box
         self.box_width = 0.3 # This is added to box_y every time a box is dropped
 
         self.destinations = []
@@ -99,7 +99,7 @@ class PickAndDrop (Move):
         self.box_ids += box_ids
         # The drop pose, that must be visited after every box
         drop_pose = {
-            'position': np.array([-0.62, None, 0.5]), # Leftmost box position; 0.3m (which is box width) to the left of the Task1B drop position
+            'position': np.array([-0.57, None, 0.5]), # Leftmost box position; 0.3m (which is box width) to the left of the Task1B drop position
             'shoulder': math.pi,
             'retract': True, #'retract': False,
             'callback': self.detach_box_from_gripper,

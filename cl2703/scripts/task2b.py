@@ -11,7 +11,7 @@
 # ============================================================
 
 from cl2703.task1c import Navigator
-from geometry_msgs.msg import PoseStamped, Twist, Polygon, Point32
+from geometry_msgs.msg import PoseStamped, Twist, Polygon, Point32, PoseWithCovarianceStamped
 from nav_msgs.msg import Odometry
 from ebot_docking.srv import DockSw
 from linkattacher_msgs.srv import AttachLink, DetachLink
@@ -72,6 +72,8 @@ class RackShift (Node):
         self.vel_pub    = self.create_publisher (Twist, '/cmd_vel', 10)
         self.robot_pose = None
         self.create_subscription (Odometry, '/odom', self.odom_cb, 10, callback_group=self.callback_group)
+        self.amcl_pose = None
+        self.create_subscription (PoseWithCovarianceStamped, '/amcl_pose', self.amcl_cb, 10, callback_group=self.callback_group)
         # Footprint updates
         self.fp_pub = self.create_publisher (Polygon, '/local_costmap/footprint', 10)
         self.ebot_fp = Polygon (points = [ # Robot's footprint
@@ -97,6 +99,9 @@ class RackShift (Node):
         self.robot_pose = PoseStamped (pose=msg.pose.pose, header=msg.header)
         self.robot_pose.header.frame_id = 'map'
 
+    def amcl_cb (self, msg):
+        self.amcl_pose = [msg.pose.pose.position.x, msg.pose.pose.position.y]
+
     def spin (self, rot=0.0, trans=0.0):
         '''
         Sends velocity commands to the ebot, through the /cmd_vel topic
@@ -121,7 +126,8 @@ class RackShift (Node):
             drop_pose (dict): drop position dictionary; refer rack_pose_info['drop'] assignment under __name__ == "__main__" for details
         '''
         loop_interval = 0.1
-        while not self.robot_pose:
+        #while not self.robot_pose:
+        while not self.amcl_pose:
             time.sleep (0.2)
 
         spin_dir = 0
@@ -130,8 +136,10 @@ class RackShift (Node):
         Done = False    # Is the robot at the destination position and in the correct orientation?
         while True:
             # Position difference vector between the robot and destination
-            pos_diff = np.array ([ drop_pose['trans'][0] - self.robot_pose.pose.position.x,
-                drop_pose['trans'][1] - self.robot_pose.pose.position.y ])
+#            pos_diff = np.array ([ drop_pose['trans'][0] - self.robot_pose.pose.position.x,
+#                drop_pose['trans'][1] - self.robot_pose.pose.position.y ])
+            pos_diff = np.array ([ drop_pose['trans'][0] - self.amcl_pose [0],
+                drop_pose['trans'][1] - self.amcl_pose [1] ])
             cur_angle = R.from_quat ([0.0, 0.0, self.robot_pose.pose.orientation.z, self.robot_pose.pose.orientation.w]).as_euler ('xyz')[2]
 
             goal_angle = acos ( pos_diff[0] / (sum(pos_diff**2)**0.5) )
@@ -238,7 +246,9 @@ class RackShift (Node):
 
         # Update the footprint
         self.fp_pub.publish (self.ebot_fp)
-        self.navigator.navigate (drop_pose)
+        th = threading.Thread (target = self.navigator.navigate, args = (drop_pose,))
+        th.start ()
+        #self.navigator.navigate (drop_pose)
         #pretty_print_pose(self.navigator.robot_pose)
 
     def rack_grip (self, rack, state = True):
