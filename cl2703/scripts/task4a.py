@@ -18,7 +18,7 @@ class RackShiftHW (RackShift):
         # ros2 service call /usb_relay_sw usb_relay/srv/RelaySw "{relaychannel: 0, relaystate: true}"
         req = RelaySw.Request ()
         req.relaystate = state
-        req.relaychannel = 0
+        req.relaychannel = True
 
         print (self.grip_cli.call (req))
 

@@ -13,14 +13,14 @@
 from cl2703.task1c import Navigator
 from geometry_msgs.msg import PoseStamped, Twist, Polygon, Point32, PoseWithCovarianceStamped
 from nav_msgs.msg import Odometry
-from ebot_docking.srv import DockSw
-from linkattacher_msgs.srv import AttachLink, DetachLink
+#from linkattacher_msgs.srv import AttachLink, DetachLink
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
 from math import sin, cos, acos, pi
 import time, threading, numpy as np
 from scipy.spatial.transform import Rotation as R
+from laser_utils import LaserToImg
 
 
 def pretty_print_pose (pose):
@@ -61,13 +61,6 @@ class RackShift (Node):
         Node.__init__(self, 'rackshift')
 
         self.callback_group = ReentrantCallbackGroup ()
-        # Docking on and picking up a rack
-        self.dock_cli   = self.create_client (DockSw, '/dock_control', callback_group=self.callback_group)
-        self.dock_req   = DockSw.Request ()
-        self.attach_cli = self.create_client (AttachLink, '/ATTACH_LINK', callback_group=self.callback_group)
-        self.attach_req = AttachLink.Request (model1_name='ebot', link1_name='ebot_base_link', link2_name='link')
-        self.detach_cli = self.create_client (DetachLink, '/DETACH_LINK', callback_group=self.callback_group)
-        self.detach_req = DetachLink.Request (model1_name='ebot', link1_name='ebot_base_link', link2_name='link')
         # Velocity commands and odometry
         self.vel_pub    = self.create_publisher (Twist, '/cmd_vel', 10)
         self.robot_pose = None
@@ -205,23 +198,18 @@ class RackShift (Node):
         # Unit vector pointing away from the rack.
         away = np.array ([cos(pose['pickup']['rot']), sin(pose['pickup']['rot'])])
         pickup_pose = pose['pickup'].copy ()
-        pickup_pose_pre = pose['pickup'].copy ()
-
         # Put the ebot some distance in front of the rack.
-        pickup_pose['trans'] = 1.1*away + pose['pickup']['trans']
-        pickup_pose_pre['trans'] = 0.5*away + pose['pickup']['trans']
+        pickup_pose['trans'] = 1.5*away + pose['pickup']['trans']
+        # Laser scanner should face the rack
+        pickup_pose['rot'] = normalize_angle (pickup_pose['rot'] + pi)
 
         self.navigator.navigate (pickup_pose)
-        self.adjust_pose (pickup_pose_pre)
         print ('Reached rack')
+        self.rack_grip (pose['rack'], True)
+        input ("Continue?")
 
         # Dock and pick up the rack
-        self.dock_req.orientation = pickup_pose['rot']
-        self.dock_cli.call(self.dock_req)
-        #pretty_print_pose(self.navigator.robot_pose)
-#        self.attach_req.model2_name = pose['rack']
-#        print (self.attach_cli.call (self.attach_req))
-        self.rack_grip (pose['rack'], True)
+        # TODO: Call docking routine from laser_utils
         print ('Attached rack')
 
         # Update the footprint to include the edge of the rack
@@ -239,8 +227,6 @@ class RackShift (Node):
         self.adjust_pose (pose['drop'])
 
         # Detach the rack
-#        self.detach_req.model2_name = pose['rack']
-#        print (self.detach_cli.call (self.detach_req))
         self.rack_grip (pose['rack'], False)
         print ('Detached rack')
 
@@ -248,8 +234,6 @@ class RackShift (Node):
         self.fp_pub.publish (self.ebot_fp)
         th = threading.Thread (target = self.navigator.navigate, args = (drop_pose,))
         th.start ()
-        #self.navigator.navigate (drop_pose)
-        #pretty_print_pose(self.navigator.robot_pose)
 
     def rack_grip (self, rack, state = True):
         '''Pick up the rack'''
@@ -263,9 +247,12 @@ class RackShift (Node):
 if __name__ == "__main__":
     rclpy.init ()
 
+    laserdocker = LaserToImg ()
     docker = RackShift ()
+
     executor = rclpy.executors.MultiThreadedExecutor (2)
     executor.add_node (docker)
+    executor.add_node (laserdocker)
     docker_th = threading.Thread (target=executor.spin)
     docker_th.start ()
 
