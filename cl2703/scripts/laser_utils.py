@@ -11,6 +11,7 @@ from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32MultiArray, Float32
 from scipy.spatial.transform import Rotation as R
 from sensor_msgs.msg import Range, Imu
+from cl2703.task2b import normalize_angle
 
 DEBUG = True
 
@@ -27,7 +28,7 @@ class LaserToImg (Node):
         
 
     def imu_callback_hw (self, msg):
-        self.orientation = msg.data - pi # So that -pi <= angle <= pi
+        self.orientation = normalize_angle(msg.data) # So that -pi <= angle <= pi
 
     def imu_callback (self, msg):
         self.orientation = R.from_quat ([

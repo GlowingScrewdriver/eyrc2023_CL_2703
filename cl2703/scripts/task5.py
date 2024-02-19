@@ -9,6 +9,7 @@ import rclpy, threading
 from time import sleep
 from cl2703.task2b import normalize_angle
 from math import pi
+from laser_utils import LaserToImg
 
 if __name__ == "__main__":
     rclpy.init ()
@@ -23,7 +24,9 @@ if __name__ == "__main__":
 
     # Ebot navigation and docking control
     docker = RackShiftHW ()
+    laserdocker = LaserToImg ()
     executor.add_node (docker)
+    executor.add_node (laserdocker)
 
     # Arm and gripper control
     arm_control = PickAndDropHW ("arm_control")
@@ -61,7 +64,7 @@ if __name__ == "__main__":
             arm_motion_async ()
 
             # Shift the rack
-            docker.rack_shift (rack)
+            docker.rack_shift (rack, laserdocker)
 
         #input ('Press [enter] to continue with the task')
         docker.get_clock().sleep_for (rclpy.time.Duration(seconds = 0.5))

@@ -20,7 +20,6 @@ from rclpy.node import Node
 from math import sin, cos, acos, pi
 import time, threading, numpy as np
 from scipy.spatial.transform import Rotation as R
-from laser_utils import LaserToImg
 
 
 def pretty_print_pose (pose):
@@ -182,7 +181,7 @@ class RackShift (Node):
 
             self.get_clock().sleep_for (rclpy.time.Duration(seconds = loop_interval))
 
-    def rack_shift (self, rack_pose_info):
+    def rack_shift (self, rack_pose_info, laserdocker):
         '''
         Pick up a rack from a given position and drop it in front of the UR5 arm
 
@@ -210,6 +209,8 @@ class RackShift (Node):
 
         # Dock and pick up the rack
         # TODO: Call docking routine from laser_utils
+        #self.laserdocker.dock (pose['rot'])
+        laserdocker.dock (pickup_pose['rot'])
         print ('Attached rack')
 
         # Update the footprint to include the edge of the rack
@@ -247,12 +248,12 @@ class RackShift (Node):
 if __name__ == "__main__":
     rclpy.init ()
 
-    laserdocker = LaserToImg ()
+    #docker.laserdocker = LaserToImg ()
     docker = RackShift ()
 
     executor = rclpy.executors.MultiThreadedExecutor (2)
     executor.add_node (docker)
-    executor.add_node (laserdocker)
+    #executor.add_node (docker.laserdocker)
     docker_th = threading.Thread (target=executor.spin)
     docker_th.start ()
 
