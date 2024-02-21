@@ -4,16 +4,27 @@ from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 from threading import Thread
 from time import sleep
-from math import sin, cos, pi
+from math import sin, cos, pi, atan
 from numpy import ndarray, zeros, uint8, array
 import cv2
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32MultiArray, Float32
 from scipy.spatial.transform import Rotation as R
 from sensor_msgs.msg import Range, Imu
-from cl2703.task2b import normalize_angle
 
-DEBUG = True
+### Flags for script behaviour ###
+DEBUG = True   # Whether to render the laser scan along with some markers for debugging
+ARENA = False  # Enables switching between simulator and hardware with ease
+
+def pos_angle (an):
+    """
+    Make angle an positive such that 0 < an < 2*pi
+    """
+    while an < 0:
+        an += 2*pi
+    while an >= 2*pi:
+        an -= 2*pi
+    return an
 
 class LaserToImg (Node):
     def __init__ (self, name="laser_to_img"):
@@ -22,24 +33,33 @@ class LaserToImg (Node):
         self.create_subscription(LaserScan, '/scan', self.lasercb, 10)
         self.cmd_vel_pub = self.create_publisher (Twist, '/cmd_vel', 10)
 
-        self.imu_sub = self.create_subscription(Float32, '/orientation', self.imu_callback_hw, 10)
-        self.ultra_sub = self.create_subscription(Float32MultiArray, 'ultrasonic_sensor_std_float', self.ultra_callback_hw, 10)
-        #self.imu_sub = self.create_subscription(Imu, '/imu', self.imu_callback, 10)
+        if ARENA: # For the hardware arena
+            self.imu_sub = self.create_subscription(Float32, '/orientation', self.imu_callback_hw, 10)
+            self.ultra_sub = self.create_subscription(Float32MultiArray, 'ultrasonic_sensor_std_float', self.ultra_callback_hw, 10)
+        else:     # For the simulator
+            self.imu_sub = self.create_subscription(Imu, '/imu', self.imu_callback, 10)
+            self.ultrasonic_rl_sub = self.create_subscription(Range, '/ultrasonic_rl/scan', self.ultrasonic_rl_callback, 10)
         
 
     def imu_callback_hw (self, msg):
-        self.orientation = normalize_angle(msg.data) # So that -pi <= angle <= pi
+        #self.orientation = normalize_angle(msg.data) # So that -pi <= angle <= pi
+        self.orientation = pos_angle (msg.data) # So that 0 <= angle < 2pi
 
     def imu_callback (self, msg):
-        self.orientation = R.from_quat ([
+        an = R.from_quat ([
             msg.orientation.x,
             msg.orientation.y,
             msg.orientation.z,
             msg.orientation.w,
         ]).as_euler ('zxy')[0]
+        self.orientation = pos_angle (an + 6*pi/4) # Just for some noise
+
     def ultra_callback_hw (self, msg):
         self.range_left = msg.data[4]
         self.range_right = msg.data[5]
+
+    def ultrasonic_rl_callback(self, msg):
+        self.range_left = msg.range
 
     def lasercb (self, msg):
         self.scan = msg
@@ -152,14 +172,18 @@ class LaserToImg (Node):
 
     def dock_advice (self):
         """
-        Outputs velocity info to get the ebot to dock
-        Used by ebot docking controller
-        Returns a tuple of the form (trans, rot) speed
+        Outputs velocity hints and rack angle to get the ebot to dock
+        Used by docking controller
+        Returns a tuple of the form (trans speed, rot speed, rack offset angle)
+        Note: rack offset is 0 when the rack is perfectly aligned with the ebot
+        and ultrasonic sensor faces rack, and increases as ebot rotates clockwise.
+        In other words, "how much should the ebot rotate in its own frame so that
+        electromagnets point to the rack?"
         """
         img, origin = self.scan_to_matrix ()
         #im_color = cv2.cvtColor (img, cv2.COLOR_GRAY2RGB)
         rack = self.detectcoordinates (img)
-        ret = (0.05, 0.0)
+        ret = [0.05, 0.0, -pi]
         if rack is not None:
             # Tasks:
             # * Find the further corner
@@ -172,13 +196,18 @@ class LaserToImg (Node):
             far = max ((c1, c2), key = lambda c: sum (c**2))
             if far[1] > 0: spin = 1
             else:          spin = -1
-            ret = (0.05, spin * 0.3)
-            if far[0] < 50: ret = None # Signals endpoint
+            ret [1] = spin * 0.3
+            if far[0] < 50: ret [0:2] = [0.0, 0.0] # Endpoint
+
+            offset = atan ((c1[0] - c2[0]) / (c2[1] - c1[1])) + pi
+            ret [2] = offset # This should already satisfy 0 < offset < 2pi
 
             # Debug info
             if DEBUG:
                 cv2.circle (self.im_color, origin + far, 3, (0, 0, 255), 3)
                 cv2.putText (self.im_color, f"Rack distance: {far[0]}", (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255))
+                cv2.putText (self.im_color, f"Rack offset: {offset}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255))
+                cv2.putText (self.im_color, f"IMU reading: {self.orientation}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255))
 
         #cv2.imshow ("Rack", im_color)
         #cv2.waitKey (1)
@@ -188,41 +217,32 @@ class LaserToImg (Node):
         vel = Twist ()
         while True: # Get to the center of rack
             v = self.dock_advice ()
-            if v is None:
-                vel.linear.x, vel.angular.z = 0.0, 0.0
-                self.cmd_vel_pub.publish (vel)
-                break
-
-            vel.linear.x, vel.angular.z = v
+            vel.linear.x, vel.angular.z = v [0:2]
             self.cmd_vel_pub.publish (vel)
+            if not v[0]: break # Docking is complete
             cv2.imshow ("Rack view", self.im_color)
             cv2.waitKey (1)
 
-        spin = 0
-        while True: # Rotate
-            diff = orientation - self.orientation
-            # Direction
-            if diff > 0: spin_n = 1
-            else:        spin_n = -1
-            # Speed
-            if diff > 0.2: mul = 0.4
-            else: mul = 0.1
-            # Stopping
-            if not spin + spin_n:
+        start_angle = self.orientation # Track the angle difference from start_angle
+        target_offset = v [2]          # Aim to reach angle start_angle + target_offset
+        while True:
+            diff = pos_angle (self.orientation - start_angle)
+            print (start_angle, target_offset, diff)
+            if diff > target_offset:
+              if diff < 3*pi/2: # To guard against an IMU reading of ~2pi initially
                 vel.angular.z = 0.0
                 self.cmd_vel_pub.publish (vel)
                 break
-            # Send command
-            vel.angular.z = (mul * spin_n)
+            vel.angular.z = 0.5
             self.cmd_vel_pub.publish (vel)
-            spin = spin_n
 
         while True: # Drive to rack
-            print (self.range_left)
-            if self.range_left < 18.0:
+            #if self.range_left < 18.0:
+            if self.range_left < 0.05:
+                sleep (2)
                 vel.linear.x = 0.0
                 self.cmd_vel_pub.publish (vel)
-                sleep (2)
+                print ("Ready to attach rack")
                 break
             vel.linear.x = -0.05
             self.cmd_vel_pub.publish (vel)
@@ -241,20 +261,10 @@ if __name__ == "__main__":
         print ("Waiting for scan")
         sleep (0.5)
 
-    node.dock (1.57)
-
+    node.dock (None)
     vel = Twist ()
-    while False:
-        v = node.dock_advice ()
-        if v is None:
-            vel.linear.x, vel.angular.z = 0.0, 0.0
-            node.cmd_vel_pub.publish (vel)
-            break
-        vel.linear.x, vel.angular.z = v
-        node.cmd_vel_pub.publish (vel)
-        ### NOTES ###
-        # `shapes` is a list of contours, each of which contains 4 coordinates
-        # Now we have to find which of those shapes is the rack.
-        # The rack will have 4 corners, representing 3 edges of length 40px, 75px, 40px.
+    vel.linear.x = 0.1
+    node.cmd_vel_pub.publish (vel)
+    sleep (4)
 
     rclpy.shutdown ()
